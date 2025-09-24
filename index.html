@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TBTC Proposal Builder</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div class="header">
+    <img id="logoPreview" class="logo" alt="Logo">
+    <div class="titles">
+      <h1 id="headlinePreview">Cloud Voice for your business</h1>
+      <p id="subheadlinePreview">Powered by Telstra TIPT and Cisco Webex</p>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="tabs no-print">
+      <button class="tab-btn active" data-tab="branding">Banner</button>
+      <button class="tab-btn" data-tab="exec">Executive summary</button>
+      <button class="tab-btn" data-tab="benefits">Key benefits</button>
+      <button class="tab-btn" data-tab="features">Features</button>
+      <button class="tab-btn" data-tab="pricing">Pricing</button>
+      <button class="tab-btn" data-tab="preview">Preview / Export</button>
+    </div>
+
+    <!-- Branding -->
+    <div class="tab-panel active" id="tab-branding">
+      <div class="grid cols-3">
+        <div class="card">
+          <label class="label">Upload logo (syncs to preview & exports)</label>
+          <input type="file" id="logoInput" accept="image/*" class="input">
+        </div>
+        <div class="card">
+          <label class="label">Customer</label>
+          <input id="customer" class="input" placeholder="e.g., COLMAC Homes">
+          <label class="label" style="margin-top:10px;">Ref</label>
+          <input id="ref" class="input" placeholder="e.g., TBTC-000123">
+        </div>
+        <div class="card">
+          <label class="label">Main headline</label>
+          <input id="headline" class="input">
+          <label class="label" style="margin-top:10px;">Subheadline</label>
+          <input id="subheadline" class="input">
+        </div>
+      </div>
+    </div>
+
+    <!-- Executive summary -->
+    <div class="tab-panel" id="tab-exec">
+      <div class="card">
+        <label class="label">Executive summary</label>
+        <textarea id="exec" class="textarea"></textarea>
+      </div>
+      <div class="card">
+        <label class="label">Commercial terms & dependencies (one per line)</label>
+        <textarea id="terms" class="textarea" placeholder="Pricing ex GST unless specified&#10;36‑month term on TIPT licences and handsets"></textarea>
+      </div>
+    </div>
+
+    <!-- Key benefits -->
+    <div class="tab-panel" id="tab-benefits">
+      <div class="card">
+        <div class="flex">
+          <input id="benefitInput" class="input" placeholder="Add a benefit">
+          <button id="addBenefit" class="btn">Add</button>
+        </div>
+        <div style="margin-top:10px;" class="kf-grid" id="benefitList"></div>
+      </div>
+    </div>
+
+    <!-- Features -->
+    <div class="tab-panel" id="tab-features">
+      <div id="featuresWrap" class="grid cols-1"></div>
+      <div class="flex" style="margin-top:12px;">
+        <button id="addFeature" class="btn">Add feature</button>
+        <button id="addSelectedToHero" class="btn secondary">Add selected to Key Features Included</button>
+      </div>
+    </div>
+
+    <!-- Pricing -->
+    <div class="tab-panel" id="tab-pricing">
+      <div class="card">
+        <table class="pricing-table" id="pricingTable">
+          <thead>
+            <tr><th>Inclusions & pricing breakdown</th><th>Qty</th><th>Monthly (ex GST)</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div class="flex" style="margin-top:10px;">
+          <input id="pDesc" class="input" placeholder="Description">
+          <input id="pQty" class="input" placeholder="Qty">
+          <input id="pPrice" class="input" placeholder="Monthly ex GST">
+          <button id="addRow" class="btn">Add line</button>
+        </div>
+        <div class="flex" style="margin-top:10px;">
+          <div class="price-card">Total: $<span id="totalPrice">0.00</span> ex GST</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Preview / Export -->
+    <div class="tab-panel" id="tab-preview">
+      <div class="preview" id="previewArea"></div>
+      <div class="flex no-print" style="margin-top:12px;">
+        <button id="downloadEmail" class="btn">Export Email HTML</button>
+        <button id="downloadPrint" class="btn ghost">Print (A4)</button>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="js/state.js"></script>
+  <script src="js/dom.js"></script>
+  <script src="js/exporters.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
