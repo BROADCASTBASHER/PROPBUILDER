@@ -1,5 +1,5 @@
 
-# TBTC Proposal Builder (Codex)
+# Braneded Proposal Builder (Codex)
 
 A cleaned, modular rebuild of the single‑file Proposal Builder as a multi‑file project. 
 It preserves your styling, branding, fonts (embedded if provided), and adds the fixes raised in project history.
