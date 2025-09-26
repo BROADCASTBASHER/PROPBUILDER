@@ -293,10 +293,11 @@ function normaliseCard(card) {
   const image = String(card.img ?? card.image ?? '').trim();
   const size = card.size ?? card.dimensions ?? card.imgSize ?? '';
   const [width, height] = parseSize(size, 320, 180);
+  const hero = Boolean(card.hero);
   if (!title && !copy && !image) {
     return null;
   }
-  return { title, copy, image, width, height };
+  return { title, copy, image, width, height, hero };
 }
 
 function readHeroCards() {
@@ -441,11 +442,12 @@ function buildEmailHTML() {
     const title = String(card.t ?? card.title ?? '').trim();
     const copy = String(card.c ?? card.copy ?? '').trim();
     const image = String(card.img ?? card.image ?? '').trim();
+    const hero = Boolean(card.hero);
     const size = parseSizeValue(card.size ?? card.dimensions ?? card.imgSize ?? '', defaults[0], defaults[1]);
     if (!title && !copy && !image) {
       return null;
     }
-    return { title, copy, image, width: size[0], height: size[1] };
+    return { title, copy, image, width: size[0], height: size[1], hero };
   };
 
   const readJSON = (key) => {
@@ -502,6 +504,25 @@ function buildEmailHTML() {
       output.push(Array.from(cells).map((cell) => escapeHTML(cell && cell.textContent ? cell.textContent.trim() : '')));
     }
     return output;
+  };
+
+  const readFeaturesHeader = () => {
+    const header = document.getElementById('featuresPreviewHeader');
+    if (!header || typeof header.querySelector !== 'function') {
+      return { title: '', subtitle: '', legend: '' };
+    }
+    const readPart = (selector) => {
+      const node = header.querySelector(selector);
+      if (!node || typeof node.textContent !== 'string') {
+        return '';
+      }
+      return node.textContent.trim();
+    };
+    return {
+      title: readPart('.title'),
+      subtitle: readPart('.subtitle'),
+      legend: readPart('.legend')
+    };
   };
 
   const heroImageData = (() => {
@@ -562,6 +583,19 @@ function buildEmailHTML() {
     return '#E5E6EA';
   })();
 
+  const resolvePillTextColor = (background) => {
+    const match = String(background == null ? '' : background).trim().match(/^#?([0-9a-f]{6})$/i);
+    if (!match) {
+      return '#0B1220';
+    }
+    const hex = match[1];
+    const r = Number.parseInt(hex.slice(0, 2), 16);
+    const g = Number.parseInt(hex.slice(2, 4), 16);
+    const b = Number.parseInt(hex.slice(4, 6), 16);
+    const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+    return brightness < 140 ? '#FFFFFF' : '#0B1220';
+  };
+
   const getText = (id) => {
     const el = document.getElementById(id);
     if (!el || typeof el.textContent !== 'string') {
@@ -605,155 +639,225 @@ function buildEmailHTML() {
   const assumptions = Array.from(document.querySelectorAll('#assumptions li'))
     .map((node) => escapeHTML(node && node.textContent ? node.textContent.trim() : ''))
     .filter((text) => text.length > 0);
-  const features = readFeatures();
-  const heroCards = readHeroCards();
+  const heroHighlights = readHeroCards().map((card) => Object.assign({}, card, { hero: true }));
+  const featureCards = readFeatures();
+  const allFeatures = heroHighlights.concat(featureCards);
   const priceRows = readPriceRows();
+  const featuresHeader = readFeaturesHeader();
+  const hasHeroFeature = allFeatures.some((feature) => feature.hero);
+  const pillTextColor = resolvePillTextColor(panelColor);
+
+  const renderFeatureCopy = (text) => {
+    if (!text) {
+      return '';
+    }
+    if (text.includes('\n') && typeof bulletify === 'function') {
+      const bullets = bulletify(text);
+      if (bullets) {
+        return `<ul style="margin:0;padding-left:20px;font-size:15px;line-height:1.6;color:#2C3440;">${bullets}</ul>`;
+      }
+    }
+    return `<div style="margin:0;font-size:15px;line-height:1.6;color:#2C3440;">${escapeHTML(text)}</div>`;
+  };
+
+  const renderFeatureCard = (feature) => {
+    if (!feature) {
+      return '';
+    }
+    const { title, copy, image, hero, height } = feature;
+    const bodyParts = [];
+    if (hero) {
+      bodyParts.push('<div style="display:inline-block;padding:6px 12px;border-radius:999px;background:#FFF0E5;border:1px solid #FFC8AE;color:#B54E20;font-size:12px;font-weight:700;letter-spacing:0.06em;margin:0 0 12px;text-transform:uppercase;">HERO FEATURE</div>');
+    }
+    if (title) {
+      bodyParts.push(`<div style="font-size:18px;font-weight:700;margin:0 0 8px;color:#0B1220;">${escapeHTML(title)}</div>`);
+    }
+    const copyMarkup = renderFeatureCopy(copy);
+    if (copyMarkup) {
+      bodyParts.push(copyMarkup);
+    }
+
+    const cardParts = [];
+    cardParts.push('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;">');
+    if (hero && image) {
+      const safeHeight = Number.isFinite(Number(height)) ? Number(height) : 200;
+      cardParts.push(`<tr><td style="padding:0 0 16px;" colspan="2"><img src="${escapeHTML(image)}" alt="${escapeHTML(title || 'Feature image')}" style="display:block;width:100%;height:auto;max-height:${Math.max(180, safeHeight)}px;border-radius:16px;object-fit:cover;"></td></tr>`);
+    }
+    if (hero) {
+      cardParts.push(`<tr><td style="padding:0;" colspan="2">${bodyParts.join('')}</td></tr>`);
+    } else {
+      const iconCell = image
+        ? `<img src="${escapeHTML(image)}" alt="${escapeHTML(title || 'Feature icon')}" style="display:block;width:100%;height:auto;max-height:${Math.max(56, Math.min(180, Number(height) || 80))}px;">`
+        : '&nbsp;';
+      cardParts.push('<tr>');
+      cardParts.push(`<td style="width:72px;padding:0 16px 0 0;vertical-align:top;">${iconCell}</td>`);
+      cardParts.push(`<td style="vertical-align:top;">${bodyParts.join('')}</td>`);
+      cardParts.push('</tr>');
+    }
+    cardParts.push('</table>');
+
+    return `<div style="border:1px solid #D7DBE7;border-radius:18px;padding:20px;background:#FFFFFF;">${cardParts.join('')}</div>`;
+  };
+
+  const renderFeatureGrid = (features) => {
+    if (!features.length) {
+      return '';
+    }
+    const rows = [];
+    const standardFeatures = [];
+    for (const feature of features) {
+      if (feature.hero) {
+        rows.push(`<tr><td colspan="2" style="padding:0 0 16px;">${renderFeatureCard(feature)}</td></tr>`);
+      } else {
+        standardFeatures.push(feature);
+      }
+    }
+    for (let i = 0; i < standardFeatures.length; i += 2) {
+      const left = renderFeatureCard(standardFeatures[i]);
+      const rightFeature = standardFeatures[i + 1];
+      const right = rightFeature ? renderFeatureCard(rightFeature) : '';
+      rows.push(`<tr><td style="padding:0 8px 16px 0;width:50%;vertical-align:top;">${left}</td><td style="padding:0 0 16px 8px;width:50%;vertical-align:top;">${right || '&nbsp;'}</td></tr>`);
+    }
+    return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;">${rows.join('')}</table>`;
+  };
+
+  const hasSummary = Boolean(summary);
+  const hasBenefits = Boolean(benefitsList);
+  const hasFeatures = allFeatures.length > 0;
+  const hasPricingSummary = Boolean(term) || Boolean(monthlyDetails.amount);
+  const hasAssumptions = assumptions.length > 0;
 
   const out = [];
   out.push('<!doctype html><html lang="en"><head><meta charset="utf-8">');
   out.push('<meta name="viewport" content="width=device-width,initial-scale=1">');
-  out.push('<title>Telstra Proposal Summary</title>');
-  out.push('<style>');
-  out.push("body{margin:0;padding:24px;background:#F6F0E8;color:#0B1220;font-family:'TelstraText',Arial,sans-serif;}");
-  out.push('.wrapper{max-width:960px;margin:0 auto;}');
-  out.push('.card{background:#fff;border-radius:20px;box-shadow:0 10px 40px rgba(11,18,32,0.12);margin-bottom:24px;overflow:hidden;}');
-  out.push('.card-header{padding:24px;border-bottom:1px solid #E5E6EA;}');
-  out.push('.card-body{padding:24px;}');
-  out.push('.card h1{margin:0;font-size:28px;}');
-  out.push('.card h2{margin:0;font-size:22px;}');
-  out.push('.card h3{margin:0 0 12px;font-size:18px;}');
-  out.push('.pill{display:inline-flex;align-items:center;padding:8px 16px;border-radius:999px;font-weight:700;background:' + panelColor + ';color:#fff;}');
-  out.push('.pricing-table{width:100%;border-collapse:collapse;font-size:14px;}');
-  out.push('.pricing-table th,.pricing-table td{border-top:1px solid #E5E6EA;padding:12px;text-align:left;vertical-align:top;}');
-  out.push('.pricing-table thead th{background:#EEF2FF;font-weight:700;}');
-  out.push('ul{margin:0;padding-left:20px;}');
-  out.push('</style></head><body><div class="wrapper">');
+  out.push('<title>TBTC VIC EAST Proposal Studio</title>');
+  out.push('<style>img{border:0;display:block;}@media (prefers-color-scheme:dark){body{background:#0B1220 !important;}}</style>');
+  out.push(`</head><body style="margin:0;padding:0;background:#F5F2EC;color:#0B1220;font-family:'TelstraText',Arial,sans-serif;">`);
+  out.push('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;background:#F5F2EC;">');
+  out.push('<tr><td align="center" style="padding:32px 16px;">');
+  out.push('<table role="presentation" width="720" cellpadding="0" cellspacing="0" style="width:100%;max-width:720px;border-collapse:separate;">');
+  out.push('<tr><td style="padding:0;">');
+  out.push('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;background:#FFFFFF;border-radius:28px;overflow:hidden;box-shadow:0 18px 60px rgba(11,18,32,0.16);">');
+  out.push('<tr><td style="background:#0B1220;color:#FFFFFF;padding:16px 28px;font-size:12px;letter-spacing:0.12em;font-weight:700;text-transform:uppercase;">TBTC VIC EAST Proposal Studio</td></tr>');
+  out.push('<tr><td style="padding:32px 28px 8px;">');
 
-  out.push('<section class="card intro">');
   if (heroImageData) {
-    out.push(`<img src="${escapeHTML(heroImageData)}" alt="Banner" style="width:100%;display:block;">`);
+    out.push(`<div style="margin:0 0 24px;"><img src="${escapeHTML(heroImageData)}" alt="Banner" style="width:100%;height:auto;border-radius:20px;display:block;"></div>`);
   }
-  out.push('<div class="card-body">');
+
   if (customer) {
-    out.push(`<div class="pill">${escapeHTML(customer)}</div>`);
+    out.push(`<div style="margin:0 0 12px;"><span style="display:inline-block;padding:8px 16px;border-radius:999px;background:${escapeHTML(panelColor)};color:${pillTextColor};font-weight:700;letter-spacing:0.03em;">${escapeHTML(customer)}</span></div>`);
   }
+
   if (referenceLine) {
-    out.push(`<p style="margin:12px 0 0;font-weight:600;">${escapeHTML(referenceLine)}</p>`);
+    out.push(`<div style="font-weight:600;font-size:14px;color:#5B6573;margin:0 0 16px;">${escapeHTML(referenceLine)}</div>`);
   }
+
   if (heroTitle) {
-    out.push(`<h1 style="margin:16px 0 8px;">${escapeHTML(heroTitle)}</h1>`);
+    out.push(`<div style="font-size:30px;font-weight:800;line-height:1.2;margin:0 0 8px;">${escapeHTML(heroTitle)}</div>`);
   }
+
   if (heroSubtitle) {
-    out.push(`<p style="margin:0 0 16px;font-size:18px;color:#5B6573;">${escapeHTML(heroSubtitle)}</p>`);
+    out.push(`<div style="font-size:18px;line-height:1.5;color:#5B6573;margin:0 0 24px;">${escapeHTML(heroSubtitle)}</div>`);
   }
-  out.push('</div></section>');
 
-  out.push('<section class="card summary">');
-  out.push('<div class="card-header"><h2>Executive summary</h2></div>');
-  out.push('<div class="card-body">');
-  if (summary) {
-    out.push(`<p style="margin:0;font-size:16px;line-height:1.6;">${escapeHTML(summary)}</p>`);
-  }
-  if (benefitsList) {
-    out.push('<div style="margin-top:24px;">');
-    out.push('<h3>Key benefits</h3>');
-    out.push(`<ul>${benefitsList}</ul>`);
-    out.push('</div>');
-  }
-  out.push('</div></section>');
-
-  if (features.length) {
-    out.push('<section class="card features">');
-    out.push('<div class="card-header"><h2>Features &amp; benefits</h2><p style="margin:8px 0 0;color:#5B6573;">Key Features Included</p></div>');
-    out.push('<div class="card-body">');
-    out.push('<table role="presentation" width="100%" style="width:100%;border-collapse:collapse;">');
-    for (const feature of features) {
+  if (hasSummary || hasBenefits) {
+    if (hasSummary && hasBenefits) {
+      out.push('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;margin:0 0 24px;">');
       out.push('<tr>');
-      out.push('<td style="padding:0 0 16px;vertical-align:top;">');
-      out.push('<table role="presentation" width="100%" style="width:100%;border-collapse:collapse;background:#FAF7F3;border:1px solid #E5E6EA;">');
-      out.push('<tr><td style="padding:16px;vertical-align:top;">');
-      if (feature.image) {
-        out.push(`<img src="${escapeHTML(feature.image)}" alt="${escapeHTML(feature.title || 'Feature')}" style="display:block;width:100%;height:auto;max-height:${feature.height}px;margin:0 0 12px;">`);
-      }
-      if (feature.title) {
-        out.push(`<p style="margin:0 0 8px;font-size:16px;line-height:1.4;font-weight:600;color:#0B1220;">${escapeHTML(feature.title)}</p>`);
-      }
-      if (feature.copy) {
-        out.push(`<p style="margin:0;font-size:15px;line-height:1.5;color:#2C3440;">${escapeHTML(feature.copy)}</p>`);
-      }
-      out.push('</td></tr></table>');
-      out.push('</td></tr>');
-    }
-    out.push('</table>');
-    out.push('</div></section>');
-  }
-
-  if (heroCards.length) {
-    out.push('<section class="card hero-cards">');
-    out.push('<div class="card-header"><h2>Key features</h2></div>');
-    out.push('<div class="card-body hero-grid">');
-    out.push('<table role="presentation" width="100%" style="width:100%;border-collapse:collapse;">');
-    for (const card of heroCards) {
-      out.push('<tr>');
-      out.push('<td style="padding:0 0 16px;vertical-align:top;">');
-      out.push('<table role="presentation" width="100%" style="width:100%;border-collapse:collapse;background:#FAF7F3;border:1px solid #E5E6EA;">');
-      out.push('<tr><td style="padding:16px;vertical-align:top;">');
-      if (card.image) {
-        out.push(`<img src="${escapeHTML(card.image)}" alt="${escapeHTML(card.title || 'Hero card')}" style="display:block;width:100%;height:auto;max-height:${card.height}px;margin:0 0 12px;">`);
-      }
-      if (card.title) {
-        out.push(`<p style="margin:0 0 8px;font-size:16px;line-height:1.4;font-weight:600;color:#0B1220;">${escapeHTML(card.title)}</p>`);
-      }
-      if (card.copy) {
-        out.push(`<p style="margin:0;font-size:15px;line-height:1.5;color:#2C3440;">${escapeHTML(card.copy)}</p>`);
-      }
-      out.push('</td></tr></table>');
-      out.push('</td></tr>');
-    }
-    out.push('</table>');
-    out.push('</div></section>');
-  }
-
-  const hasPricingSummary = Boolean(term) || Boolean(monthlyDetails.amount);
-  if (priceRows.length || hasPricingSummary) {
-    out.push('<section class="card pricing">');
-    out.push('<div class="card-header"><h2>Inclusions &amp; pricing breakdown</h2></div>');
-    out.push('<div class="card-body">');
-    if (hasPricingSummary) {
-      out.push('<div style="margin:0 0 12px;display:flex;flex-wrap:wrap;gap:12px;">');
-      if (term) {
-        out.push(`<p style="margin:0;font-weight:600;">Term: ${escapeHTML(term)}</p>`);
-      }
-      if (monthlyDetails.amount) {
-        const gstSuffix = monthlyDetails.gst
-          ? ` <span style="font-weight:400;color:#5B6573;">(${escapeHTML(monthlyDetails.gst)})</span>`
-          : '';
-        out.push(`<p style="margin:0;font-weight:600;">Monthly investment: ${escapeHTML(monthlyDetails.amount)}${gstSuffix}</p>`);
-      }
+      out.push('<td style="width:50%;padding:0 12px 0 0;vertical-align:top;">');
+      out.push('<div style="border:1px solid #D7DBE7;border-radius:18px;padding:20px;background:#FAF7F3;">');
+      out.push('<div style="font-size:18px;font-weight:700;margin:0 0 8px;">Executive summary</div>');
+      out.push(`<div style="font-size:16px;line-height:1.6;margin:0;">${escapeHTML(summary)}</div>`);
+      out.push('</div></td>');
+      out.push('<td style="width:50%;padding:0 0 0 12px;vertical-align:top;">');
+      out.push('<div style="border:1px solid #D7DBE7;border-radius:18px;padding:20px;background:#FFFFFF;">');
+      out.push('<div style="font-size:18px;font-weight:700;margin:0 0 8px;">Key benefits</div>');
+      out.push(`<ul style="margin:0;padding-left:20px;font-size:16px;line-height:1.6;color:#2C3440;">${benefitsList}</ul>`);
+      out.push('</div></td>');
+      out.push('</tr></table>');
+    } else if (hasSummary) {
+      out.push('<div style="border:1px solid #D7DBE7;border-radius:18px;padding:20px;background:#FAF7F3;margin:0 0 24px;">');
+      out.push('<div style="font-size:18px;font-weight:700;margin:0 0 8px;">Executive summary</div>');
+      out.push(`<div style="font-size:16px;line-height:1.6;margin:0;">${escapeHTML(summary)}</div>`);
+      out.push('</div>');
+    } else if (hasBenefits) {
+      out.push('<div style="border:1px solid #D7DBE7;border-radius:18px;padding:20px;background:#FFFFFF;margin:0 0 24px;">');
+      out.push('<div style="font-size:18px;font-weight:700;margin:0 0 8px;">Key benefits</div>');
+      out.push(`<ul style="margin:0;padding-left:20px;font-size:16px;line-height:1.6;color:#2C3440;">${benefitsList}</ul>`);
       out.push('</div>');
     }
+  }
+
+  if (hasFeatures) {
+    const titleText = featuresHeader.title ? escapeHTML(featuresHeader.title) : 'Features &amp; benefits';
+    const subtitleText = featuresHeader.subtitle ? `<div style="font-size:14px;font-weight:600;letter-spacing:0.04em;color:#5B6573;margin:2px 0 0;text-transform:uppercase;">${escapeHTML(featuresHeader.subtitle)}</div>` : '';
+    const legendText = hasHeroFeature && featuresHeader.legend
+      ? `<div style="font-size:13px;color:#5B6573;margin:12px 0 0;">${escapeHTML(featuresHeader.legend)}</div>`
+      : '';
+    out.push('<div style="margin:0 0 32px;padding-top:8px;border-top:1px solid #E5E6EA;">');
+    out.push(`<div style="font-size:22px;font-weight:800;margin:24px 0 4px;">${titleText}</div>`);
+    if (subtitleText) {
+      out.push(subtitleText);
+    }
+    if (legendText) {
+      out.push(legendText);
+    }
+    out.push(`<div style="margin-top:20px;">${renderFeatureGrid(allFeatures)}</div>`);
+    out.push('</div>');
+  }
+
+  if (priceRows.length || hasPricingSummary) {
+    out.push('<div style="margin:0 0 32px;padding-top:8px;border-top:1px solid #E5E6EA;">');
+    out.push('<div style="font-size:22px;font-weight:800;margin:24px 0 16px;">Inclusions &amp; pricing breakdown</div>');
+    if (hasPricingSummary) {
+      out.push('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;margin:0 0 20px;">');
+      out.push('<tr>');
+      if (term) {
+        out.push(`<td style="padding:0 16px 0 0;vertical-align:top;font-weight:600;font-size:15px;">Term: ${escapeHTML(term)}</td>`);
+      }
+      if (monthlyDetails.amount) {
+        const gstSuffix = monthlyDetails.gst ? ` <span style="font-weight:400;color:#5B6573;">(${escapeHTML(monthlyDetails.gst)})</span>` : '';
+        out.push(`<td style="padding:0;vertical-align:top;font-weight:600;font-size:15px;">Monthly investment: ${escapeHTML(monthlyDetails.amount)}${gstSuffix}</td>`);
+      }
+      out.push('</tr></table>');
+    }
     if (priceRows.length) {
-      out.push('<table class="pricing-table"><thead><tr><th>Inclusion</th><th>Qty</th><th>Unit</th><th>Total</th></tr></thead><tbody>');
+      out.push('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;font-size:14px;">');
+      out.push('<thead><tr style="background:#EEF2FF;text-align:left;">');
+      out.push('<th style="padding:12px;border:1px solid #E1E6F2;font-weight:700;">Inclusion</th>');
+      out.push('<th style="padding:12px;border:1px solid #E1E6F2;font-weight:700;width:80px;">Qty</th>');
+      out.push('<th style="padding:12px;border:1px solid #E1E6F2;font-weight:700;width:80px;">Unit</th>');
+      out.push('<th style="padding:12px;border:1px solid #E1E6F2;font-weight:700;width:120px;">Total</th>');
+      out.push('</tr></thead><tbody>');
       for (const row of priceRows) {
         const [name = '', qty = '', unit = '', total = ''] = row;
-        out.push(`<tr><td>${name}</td><td>${qty}</td><td>${unit}</td><td>${total}</td></tr>`);
+        out.push('<tr>');
+        out.push(`<td style="padding:12px;border:1px solid #E1E6F2;vertical-align:top;">${name}</td>`);
+        out.push(`<td style="padding:12px;border:1px solid #E1E6F2;vertical-align:top;">${qty}</td>`);
+        out.push(`<td style="padding:12px;border:1px solid #E1E6F2;vertical-align:top;">${unit}</td>`);
+        out.push(`<td style="padding:12px;border:1px solid #E1E6F2;vertical-align:top;">${total}</td>`);
+        out.push('</tr>');
       }
       out.push('</tbody></table>');
     }
-    out.push('</div></section>');
+    out.push('</div>');
   }
 
-  if (assumptions.length) {
-    out.push('<section class="card assumptions">');
-    out.push('<div class="card-header"><h2>Commercial terms &amp; dependencies</h2></div>');
-    out.push('<div class="card-body">');
-    out.push(`<ul>${assumptions.map((item) => `<li>${item}</li>`).join('')}</ul>`);
-    out.push('</div></section>');
+  if (hasAssumptions) {
+    out.push('<div style="margin:0 0 8px;padding-top:8px;border-top:1px solid #E5E6EA;">');
+    out.push('<div style="font-size:22px;font-weight:800;margin:24px 0 12px;">Commercial terms &amp; dependencies</div>');
+    out.push(`<ul style="margin:0;padding-left:20px;font-size:15px;line-height:1.6;color:#2C3440;">${assumptions.map((item) => `<li>${item}</li>`).join('')}</ul>`);
+    out.push('</div>');
   }
 
-  out.push('</div></body></html>');
+  out.push('</td></tr></table>');
+  out.push('</td></tr></table>');
+  out.push('</td></tr></table>');
+  out.push('</body></html>');
   return out.join('');
 }
+
 
 function initializeApp() {
   if (typeof document === 'undefined') {
