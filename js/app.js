@@ -714,11 +714,12 @@ function buildEmailHTML() {
     out.push('</div></section>');
   }
 
-  if (priceRows.length) {
+  const hasPricingSummary = Boolean(term) || Boolean(monthlyDetails.amount);
+  if (priceRows.length || hasPricingSummary) {
     out.push('<section class="card pricing">');
     out.push('<div class="card-header"><h2>Inclusions &amp; pricing breakdown</h2></div>');
     out.push('<div class="card-body">');
-    if (term || monthlyDetails.amount) {
+    if (hasPricingSummary) {
       out.push('<div style="margin:0 0 12px;display:flex;flex-wrap:wrap;gap:12px;">');
       if (term) {
         out.push(`<p style="margin:0;font-weight:600;">Term: ${escapeHTML(term)}</p>`);
@@ -731,12 +732,14 @@ function buildEmailHTML() {
       }
       out.push('</div>');
     }
-    out.push('<table class="pricing-table"><thead><tr><th>Inclusion</th><th>Qty</th><th>Unit</th><th>Total</th></tr></thead><tbody>');
-    for (const row of priceRows) {
-      const [name = '', qty = '', unit = '', total = ''] = row;
-      out.push(`<tr><td>${name}</td><td>${qty}</td><td>${unit}</td><td>${total}</td></tr>`);
+    if (priceRows.length) {
+      out.push('<table class="pricing-table"><thead><tr><th>Inclusion</th><th>Qty</th><th>Unit</th><th>Total</th></tr></thead><tbody>');
+      for (const row of priceRows) {
+        const [name = '', qty = '', unit = '', total = ''] = row;
+        out.push(`<tr><td>${name}</td><td>${qty}</td><td>${unit}</td><td>${total}</td></tr>`);
+      }
+      out.push('</tbody></table>');
     }
-    out.push('</tbody></table>');
     out.push('</div></section>');
   }
 
