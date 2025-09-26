@@ -44,18 +44,114 @@ const esc = loadFunction('esc');
 const bulletify = loadFunction('bulletify', { esc });
 const rgbToHex = loadFunction('__rgbToHex__px');
 const buildEmailHTML = loadFunction('buildEmailHTML');
+const initializeApp = loadFunction('initializeApp');
 
 function createElement(overrides = {}) {
-  const base = {
-    textContent: '',
-    innerHTML: '',
-    style: {},
-    src: '',
-    toDataURL: undefined,
-    querySelector: () => null,
-    querySelectorAll: () => [],
+  const element = { style: {}, dataset: {}, children: [], _listeners: {}, className: '' };
+
+  let textContentValue = overrides.textContent ?? '';
+  Object.defineProperty(element, 'textContent', {
+    get() {
+      return textContentValue;
+    },
+    set(value) {
+      textContentValue = String(value);
+      this.children = [];
+      innerHTMLValue = '';
+    }
+  });
+
+  let innerHTMLValue = overrides.innerHTML ?? '';
+  Object.defineProperty(element, 'innerHTML', {
+    get() {
+      return innerHTMLValue;
+    },
+    set(value) {
+      innerHTMLValue = String(value);
+      this.children = [];
+    }
+  });
+
+  Object.defineProperty(element, 'firstChild', {
+    get() {
+      return this.children[0] ?? null;
+    }
+  });
+
+  element.value = overrides.value ?? '';
+  element.checked = overrides.checked ?? false;
+  element.type = overrides.type ?? '';
+  element.src = overrides.src ?? '';
+  element.toDataURL = overrides.toDataURL;
+  element.classList = overrides.classList || {
+    add() {},
+    remove() {},
+    toggle() {},
+    contains() { return false; }
   };
-  return Object.assign(base, overrides);
+
+  element.appendChild = function appendChild(child) {
+    if (!child) {
+      return child;
+    }
+    child.parentElement = this;
+    this.children.push(child);
+    textContentValue = '';
+    innerHTMLValue = '';
+    return child;
+  };
+
+  element.removeChild = function removeChild(child) {
+    const index = this.children.indexOf(child);
+    if (index >= 0) {
+      this.children.splice(index, 1);
+      child.parentElement = null;
+    }
+    return child;
+  };
+
+  element.replaceChildren = function replaceChildren(...nodes) {
+    this.children = [];
+    innerHTMLValue = '';
+    nodes.forEach((node) => {
+      if (node) {
+        this.appendChild(node);
+      }
+    });
+  };
+
+  element.querySelector = overrides.querySelector || (() => null);
+  element.querySelectorAll = overrides.querySelectorAll || (() => []);
+
+  element.addEventListener = function addEventListener(type, handler) {
+    if (!this._listeners[type]) {
+      this._listeners[type] = [];
+    }
+    this._listeners[type].push(handler);
+  };
+
+  element.removeEventListener = function removeEventListener(type, handler) {
+    if (!this._listeners[type]) {
+      return;
+    }
+    this._listeners[type] = this._listeners[type].filter((fn) => fn !== handler);
+  };
+
+  element.dispatchEvent = function dispatchEvent(event) {
+    if (!event || !event.type) {
+      return;
+    }
+    const handlers = this._listeners[event.type] || [];
+    handlers.forEach((handler) => {
+      handler.call(this, Object.assign({ preventDefault() {} }, event));
+    });
+  };
+
+  element.click = function click() {
+    this.dispatchEvent({ type: 'click', target: this });
+  };
+
+  return Object.assign(element, overrides);
 }
 
 function withDocumentEnvironment(setup, fn) {
@@ -80,6 +176,7 @@ function withDocumentEnvironment(setup, fn) {
 
   const documentStub = {
     documentElement: createElement({ innerHTML: '' }),
+    body: setup.body || createElement({ classList: { add() {}, remove() {}, toggle() {} } }),
     getElementById(id) {
       return idMap.get(id) ?? null;
     },
@@ -109,7 +206,9 @@ function withDocumentEnvironment(setup, fn) {
     },
     createElement(tag) {
       return createElement({ tagName: tag.toUpperCase() });
-    }
+    },
+    addEventListener() {},
+    removeEventListener() {}
   };
 
   const previous = {
@@ -119,6 +218,14 @@ function withDocumentEnvironment(setup, fn) {
     PRESETS: global.PRESETS,
     localStorage: global.localStorage,
     getComputedStyle: global.getComputedStyle,
+    DEFAULT_PRICING_ITEMS: global.DEFAULT_PRICING_ITEMS,
+    DEFAULT_DOC_TYPE: global.DEFAULT_DOC_TYPE,
+    DEFAULT_GST_MODE: global.DEFAULT_GST_MODE,
+    DEFAULT_MONTHLY: global.DEFAULT_MONTHLY,
+    DEFAULT_TERM: global.DEFAULT_TERM,
+    DEFAULT_BANNER_TEXT: global.DEFAULT_BANNER_TEXT,
+    FEATURE_LIBRARY: global.FEATURE_LIBRARY,
+    esc: global.esc,
   };
 
   const storage = new Map();
@@ -140,6 +247,15 @@ function withDocumentEnvironment(setup, fn) {
     }
   };
   global.getComputedStyle = (el) => ({ backgroundColor: (el && el.style && el.style.backgroundColor) || priceCardColor });
+  const defaults = setup.defaults || {};
+  global.DEFAULT_PRICING_ITEMS = defaults.DEFAULT_PRICING_ITEMS ?? [];
+  global.DEFAULT_DOC_TYPE = defaults.DEFAULT_DOC_TYPE ?? 'two';
+  global.DEFAULT_GST_MODE = defaults.DEFAULT_GST_MODE ?? 'ex';
+  global.DEFAULT_MONTHLY = defaults.DEFAULT_MONTHLY ?? 0;
+  global.DEFAULT_TERM = defaults.DEFAULT_TERM ?? 0;
+  global.DEFAULT_BANNER_TEXT = defaults.DEFAULT_BANNER_TEXT ?? '';
+  global.FEATURE_LIBRARY = setup.featureLibrary || [];
+  global.esc = esc;
 
   try {
     return fn();
@@ -150,6 +266,14 @@ function withDocumentEnvironment(setup, fn) {
     global.PRESETS = previous.PRESETS;
     global.localStorage = previous.localStorage;
     global.getComputedStyle = previous.getComputedStyle;
+    global.DEFAULT_PRICING_ITEMS = previous.DEFAULT_PRICING_ITEMS;
+    global.DEFAULT_DOC_TYPE = previous.DEFAULT_DOC_TYPE;
+    global.DEFAULT_GST_MODE = previous.DEFAULT_GST_MODE;
+    global.DEFAULT_MONTHLY = previous.DEFAULT_MONTHLY;
+    global.DEFAULT_TERM = previous.DEFAULT_TERM;
+    global.DEFAULT_BANNER_TEXT = previous.DEFAULT_BANNER_TEXT;
+    global.FEATURE_LIBRARY = previous.FEATURE_LIBRARY;
+    global.esc = previous.esc;
   }
 }
 
@@ -195,6 +319,110 @@ test('bulletify trims lines and escapes HTML characters', () => {
   const expected = '<li>First line</li><li>Second &amp; &lt;Third&gt;</li>';
   assert.strictEqual(bulletify(input), expected);
   assert.strictEqual(bulletify(''), '');
+});
+
+test('initializeApp renders pricing rows and updates previews', () => {
+  const itemsContainer = createElement();
+  const priceTableBody = createElement();
+  const priceTableGhostBody = createElement();
+  const priceTableViewBody = createElement();
+  const gstSelect = createElement({ value: 'ex' });
+  const addItemBtn = createElement();
+  const monthlyInput = createElement({ value: '0' });
+  const termInput = createElement({ value: '12' });
+  const docTypeSelect = createElement({ value: 'two' });
+  const thPrice = createElement();
+  const thPriceGhost = createElement();
+  const thPriceV = createElement();
+
+  const baseState = {
+    preset: 'navy',
+    banner: {
+      text: 'Banner',
+      bold: false,
+      layout: 'left',
+      size: '1000x300',
+      logoMode: 'auto',
+      scale: 1,
+      offsetX: 0,
+      offsetY: 0,
+      fit: 'contain'
+    },
+    docType: 'two',
+    features: [],
+    pricing: {
+      gst: 'ex',
+      items: [{ label: 'Managed <Service>', qty: 2, unit: 'seat', price: 150 }],
+      monthly: 0,
+      term: 12
+    }
+  };
+
+  withDocumentEnvironment({
+    ids: {
+      items: itemsContainer,
+      btnAddItem: addItemBtn,
+      gstMode: gstSelect,
+      monthly: monthlyInput,
+      term: termInput,
+      docType: docTypeSelect,
+      thPrice,
+      thPriceGhost,
+      thPriceV
+    },
+    selectors: {
+      '#priceTable tbody': priceTableBody,
+      '#priceTableGhost tbody': priceTableGhostBody,
+      '#priceTableView tbody': priceTableViewBody,
+      '#tab-preview .hero img': createElement({ src: '' }),
+      '#tab-preview .price-card': createElement({ style: { backgroundColor: '#223344' } })
+    },
+    queryAll: {
+      '#tab-pricing .ps-tab': []
+    },
+    state: baseState,
+    presets: { navy: { panel: '#223344' } },
+    defaults: {
+      DEFAULT_PRICING_ITEMS: baseState.pricing.items,
+      DEFAULT_DOC_TYPE: 'two',
+      DEFAULT_GST_MODE: 'ex',
+      DEFAULT_MONTHLY: baseState.pricing.monthly,
+      DEFAULT_TERM: baseState.pricing.term,
+      DEFAULT_BANNER_TEXT: 'Banner'
+    },
+    windowOverrides: {
+      __LOGO_DATA__: {},
+      __ICON_DATA__: {}
+    }
+  }, () => {
+    initializeApp();
+
+    assert.strictEqual(itemsContainer.children.length, 1);
+    const row = itemsContainer.children[0];
+    assert.strictEqual(row.children.length >= 5, true);
+    const priceInput = row.children[3];
+    assert.strictEqual(priceTableBody.innerHTML.includes('Managed &lt;Service&gt;'), true);
+    assert.strictEqual(priceTableBody.innerHTML.includes('A$300.00'), true);
+
+    priceInput.value = '200';
+    priceInput.dispatchEvent({ type: 'input', target: priceInput });
+
+    assert.strictEqual(baseState.pricing.items[0].price, 200);
+    assert.strictEqual(priceTableBody.innerHTML.includes('A$400.00'), true);
+
+    gstSelect.value = 'inc';
+    gstSelect.dispatchEvent({ type: 'change', target: gstSelect });
+
+    assert.strictEqual(thPrice.textContent, 'Price (inc GST)');
+    assert.strictEqual(priceTableBody.innerHTML.includes('A$440.00'), true);
+
+    const removeBtn = row.children[4];
+    removeBtn.click();
+
+    assert.strictEqual(baseState.pricing.items.length, 0);
+    assert.strictEqual(itemsContainer.children.length, 0);
+    assert.strictEqual(priceTableBody.innerHTML.includes('Add line items'), true);
+  });
 });
 
 test('__rgbToHex__px converts rgb strings to uppercase hex', () => {
