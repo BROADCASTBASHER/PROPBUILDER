@@ -506,7 +506,9 @@ test('buildEmailHTML composes full export with escaped content and live data', (
   assert.ok(html.includes('Boost morale'));
   assert.ok(html.includes('Improve security'));
   assert.ok(html.includes('Features &amp; benefits'));
-  assert.ok(html.includes('HERO FEATURE'));
+  assert.ok(!html.includes('HERO FEATURE'));
+  assert.ok(html.indexOf('Modernise your workplace') < html.indexOf('Telstra Enterprise'));
+  assert.ok(!html.includes('(STANDARD FEATURES)'));
   assert.ok(html.includes('Hero Cloud'));
   assert.ok(html.includes('Elastic scale &amp;lt;all year&amp;gt;'));
   assert.ok(html.includes('Fast rollout &lt;guaranteed&gt;'));
