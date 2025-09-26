@@ -43,7 +43,6 @@ const wrapTextLines = loadFunction('wrapTextLines');
 const esc = loadFunction('esc');
 const bulletify = loadFunction('bulletify', { esc });
 const rgbToHex = loadFunction('__rgbToHex__px');
- codex/add-full-test-suite-i8vs08
 const buildEmailHTML = loadFunction('buildEmailHTML');
 
 function createElement(overrides = {}) {
@@ -153,8 +152,6 @@ function withDocumentEnvironment(setup, fn) {
     global.getComputedStyle = previous.getComputedStyle;
   }
 }
-=======
- main
 
 function createMockContext(charWidth = 10) {
   const calls = [];
@@ -206,7 +203,6 @@ test('__rgbToHex__px converts rgb strings to uppercase hex', () => {
   assert.strictEqual(rgbToHex(''), '#E5E6EA');
   assert.strictEqual(rgbToHex('not-a-color'), 'not-a-color');
 });
- codex/add-full-test-suite-i8vs08
 
 test('buildEmailHTML composes full export with escaped content and live data', () => {
   const assumptions = [
@@ -311,5 +307,3 @@ test('buildEmailHTML tolerates missing optional sections without crashing', () =
   assert.ok(!html.includes('Inclusions & pricing breakdown'));
   assert.ok(!html.includes('undefined'));
 });
-=======
- main
