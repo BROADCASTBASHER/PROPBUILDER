@@ -631,6 +631,57 @@ function downloadEmailHTML() {
         downloadEmailHTML();
       });
     }
+
+    const tabContainer = document.getElementById('topTabs');
+    if (tabContainer) {
+      const tabs = Array.from(tabContainer.querySelectorAll('.tab'));
+      if (tabs.length) {
+        const panels = new Map();
+        for (const tab of tabs) {
+          const target = tab.dataset ? tab.dataset.tab : undefined;
+          if (!target) {
+            continue;
+          }
+          const panel = document.getElementById(`tab-${target}`);
+          if (panel) {
+            panels.set(tab, panel);
+          }
+        }
+
+        if (panels.size) {
+          const allPanels = Array.from(new Set(panels.values()));
+
+          const activateTab = (tab) => {
+            if (!panels.has(tab)) {
+              return;
+            }
+            for (const candidate of tabs) {
+              candidate.classList.remove('active');
+            }
+            for (const panel of allPanels) {
+              panel.style.display = 'none';
+            }
+            const panel = panels.get(tab);
+            tab.classList.add('active');
+            if (panel) {
+              panel.style.display = '';
+            }
+          };
+
+          for (const tab of tabs) {
+            tab.addEventListener('click', () => {
+              activateTab(tab);
+            });
+          }
+
+          const initialActive = tabs.find((tab) => tab.classList.contains('active') && panels.has(tab))
+            || tabs.find((tab) => panels.has(tab));
+          if (initialActive) {
+            activateTab(initialActive);
+          }
+        }
+      }
+    }
   });
 })();
 
