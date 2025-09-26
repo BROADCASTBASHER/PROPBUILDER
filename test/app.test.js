@@ -495,16 +495,21 @@ test('buildEmailHTML composes full export with escaped content and live data', (
     state: { preset: 'test' }
   }, () => buildEmailHTML());
 
+  assert.ok(html.includes('TBTC VIC EAST Proposal Studio'));
   assert.match(html, /data:generated-banner/);
   assert.ok((html.match(/Ref:/g) || []).length === 1, 'ref label rendered once');
   assert.ok(html.includes('Telstra Enterprise'));
   assert.ok(html.includes('Modernise your workplace'));
+  assert.ok(html.includes('Executive summary'));
   assert.ok(html.includes('Key benefits'));
   assert.ok(html.includes('<li>Rapid deployment</li><li>99.99% uptime</li>'));
-  assert.ok(html.includes('Features &amp; benefits') || html.includes('Features & benefits'));
-  assert.ok(html.includes('Key Features Included'));
+  assert.ok(html.includes('Boost morale'));
+  assert.ok(html.includes('Improve security'));
+  assert.ok(html.includes('Features &amp; benefits'));
+  assert.ok(html.includes('HERO FEATURE'));
   assert.ok(html.includes('Hero Cloud'));
   assert.ok(html.includes('Elastic scale &amp;lt;all year&amp;gt;'));
+  assert.ok(html.includes('Fast rollout &lt;guaranteed&gt;'));
   assert.ok(html.includes('Commercial terms &amp; dependencies'));
   assert.ok(html.includes('Payment due &amp; accepted &lt;net30&gt;'));
   assert.ok(html.includes('$1,800.00'));
@@ -533,7 +538,9 @@ test('buildEmailHTML tolerates missing optional sections without crashing', () =
   assert.ok(html.includes('Minimal Co'));
   assert.ok(html.includes('Executive summary'));
   assert.ok(!html.includes('Key benefits</div><ul'));
-  assert.ok(!html.includes('Key Features Included'));
-  assert.ok(!html.includes('Inclusions & pricing breakdown'));
+  assert.ok(!html.includes('Features &amp; benefits'));
+  assert.ok(!html.includes('Inclusions &amp; pricing breakdown'));
+  assert.ok(!html.includes('Monthly investment:'));
+  assert.ok(!html.includes('Commercial terms &amp; dependencies'));
   assert.ok(!html.includes('undefined'));
 });
