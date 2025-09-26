@@ -567,6 +567,12 @@ function buildEmailHTML() {
     if (!el || typeof el.textContent !== 'string') {
       return '';
     }
+    const className = typeof el.className === 'string' ? el.className : '';
+    if ((typeof el.classList === 'object' && typeof el.classList.contains === 'function'
+        && (el.classList.contains('no-print') || el.classList.contains('legal-footer')))
+      || /\b(no-print|legal-footer)\b/.test(className)) {
+      return '';
+    }
     return el.textContent.trim();
   };
 
