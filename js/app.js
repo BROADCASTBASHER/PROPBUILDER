@@ -914,6 +914,8 @@ function initializeApp() {
   const addFeatureBtn = doc.getElementById('btnAddFeat');
   const iconModal = doc.getElementById('iconModal');
   const iconGallery = doc.getElementById('iconGallery');
+  const iconGalleryStatus = doc.getElementById('iconGalleryStatus');
+  const iconSearch = doc.getElementById('iconSearch');
   const iconUpload = doc.getElementById('iconUpload');
   const closeIconBtn = doc.getElementById('closeIcon');
 
@@ -1448,45 +1450,107 @@ function initializeApp() {
 
   let currentFeatureIndex = -1;
   let iconGalleryBuilt = false;
+  const iconItems = [];
+
+  const updateIconStatus = (visibleCount) => {
+    if (!iconGalleryStatus) {
+      return;
+    }
+    const total = iconItems.length;
+    if (!total) {
+      iconGalleryStatus.textContent = 'No bundled icons available. Upload your own icon instead.';
+      return;
+    }
+    if (!visibleCount) {
+      iconGalleryStatus.textContent = 'No pictograms match your search.';
+      return;
+    }
+    if (visibleCount === total) {
+      iconGalleryStatus.textContent = `${total} pictogram${total === 1 ? '' : 's'} available.`;
+      return;
+    }
+    iconGalleryStatus.textContent = `Showing ${visibleCount} of ${total} pictograms.`;
+  };
+
+  const applyIconSearch = (term) => {
+    const query = term ? term.trim().toLowerCase() : '';
+    let visible = 0;
+    for (const item of iconItems) {
+      const match = !query || item.dataset.name.includes(query);
+      item.style.display = match ? '' : 'none';
+      if (match) {
+        visible += 1;
+      }
+    }
+    updateIconStatus(visible);
+  };
 
   const closeIconModal = () => {
     currentFeatureIndex = -1;
     if (iconModal) {
       iconModal.style.display = "none";
     }
+    if (iconSearch) {
+      iconSearch.value = '';
+      if (iconGalleryBuilt) {
+        applyIconSearch('');
+      }
+    }
   };
 
   const renderIconGallery = () => {
-    if (!iconGallery || iconGalleryBuilt) {
+    if (!iconGallery) {
       return;
     }
-    const entries = Object.entries(iconMap);
-    if (!entries.length) {
-      iconGallery.innerHTML = '<div class="note">No bundled icons available. Upload your own icon instead.</div>';
-      iconGalleryBuilt = true;
-      return;
-    }
-    iconGallery.innerHTML = "";
-    for (const [name, src] of entries) {
-      const item = doc.createElement('div');
-      item.className = "item";
-      const img = doc.createElement('img');
-      img.src = src;
-      img.alt = name;
-      item.title = name;
-      item.appendChild(img);
-      item.addEventListener('click', () => {
-        if (currentFeatureIndex >= 0 && state.features[currentFeatureIndex]) {
-          state.features[currentFeatureIndex].img = src;
-          state.features[currentFeatureIndex].imgName = name;
-          renderFeatureGrid();
-          renderFeaturePreview();
-          closeIconModal();
+    if (!iconGalleryBuilt) {
+      const entries = Object.entries(iconMap)
+        .filter(([name]) => typeof name === 'string' && !/\.svg$/i.test(name))
+        .sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: 'base' }));
+      iconGallery.innerHTML = "";
+      iconItems.length = 0;
+      if (!entries.length) {
+        updateIconStatus(0);
+        iconGalleryBuilt = true;
+        return;
+      }
+      for (const [name, src] of entries) {
+        if (!src) {
+          continue;
         }
-      });
-      iconGallery.appendChild(item);
+        const item = doc.createElement('div');
+        item.className = "item";
+        const searchName = `${name} ${name.replace(/\.[^.]+$/, '')}`.toLowerCase();
+        item.dataset.name = searchName;
+        item.tabIndex = 0;
+        item.setAttribute('role', 'button');
+        item.setAttribute('aria-label', `Use ${name}`);
+        const img = doc.createElement('img');
+        img.src = src;
+        img.alt = name;
+        item.title = name;
+        item.appendChild(img);
+        const chooseIcon = () => {
+          if (currentFeatureIndex >= 0 && state.features[currentFeatureIndex]) {
+            state.features[currentFeatureIndex].img = src;
+            state.features[currentFeatureIndex].imgName = name;
+            renderFeatureGrid();
+            renderFeaturePreview();
+            closeIconModal();
+          }
+        };
+        item.addEventListener('click', chooseIcon);
+        item.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            chooseIcon();
+          }
+        });
+        iconGallery.appendChild(item);
+        iconItems.push(item);
+      }
+      iconGalleryBuilt = true;
     }
-    iconGalleryBuilt = true;
+    applyIconSearch(iconSearch ? iconSearch.value : '');
   };
 
   const renderFeatureGrid = () => {
@@ -1550,9 +1614,21 @@ function initializeApp() {
       chooseBtn.textContent = "Choose icon";
       chooseBtn.addEventListener('click', () => {
         currentFeatureIndex = index;
+        if (iconSearch) {
+          iconSearch.value = '';
+        }
         if (iconModal) {
           iconModal.style.display = "flex";
           renderIconGallery();
+          if (iconSearch) {
+            setTimeout(() => {
+              try {
+                iconSearch.focus({ preventScroll: true });
+              } catch (err) {
+                iconSearch.focus();
+              }
+            }, 0);
+          }
         }
       });
 
@@ -1813,6 +1889,16 @@ function initializeApp() {
       activate(initial);
     }
   };
+
+  if (iconSearch) {
+    iconSearch.addEventListener('input', () => {
+      if (!iconGalleryBuilt) {
+        renderIconGallery();
+        return;
+      }
+      applyIconSearch(iconSearch.value);
+    });
+  }
 
   if (closeIconBtn) {
     closeIconBtn.addEventListener('click', closeIconModal);

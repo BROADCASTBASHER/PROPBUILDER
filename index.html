@@ -111,10 +111,14 @@ Managed & reliable</textarea></div>
       <div class="fgrid" id="featureGrid"></div>
       <div class="modal" id="iconModal">
         <div class="panel">
-          <div style="display:flex;justify-content:space-between;align-items:center">
+          <div class="modal-head">
             <strong>Select an icon</strong>
-            <div><input id="iconUpload" type="file" accept="image/*" class="btn"></div>
+            <div class="modal-tools">
+              <input id="iconSearch" type="search" placeholder="Search pictograms…" aria-label="Search pictograms">
+              <input id="iconUpload" type="file" accept="image/*" class="btn" title="Upload your own icon">
+            </div>
           </div>
+          <div class="note" id="iconGalleryStatus"></div>
           <div class="gallery" id="iconGallery"></div>
           <div class="actions"><button class="btn" id="closeIcon" type="button">Close</button></div>
         </div>
