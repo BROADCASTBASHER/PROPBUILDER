@@ -672,9 +672,6 @@ function buildEmailHTML() {
     }
     const { title, copy, image, hero, height } = feature;
     const bodyParts = [];
-    if (hero) {
-      bodyParts.push('<div style="display:inline-block;padding:6px 12px;border-radius:999px;background:#FFF0E5;border:1px solid #FFC8AE;color:#B54E20;font-size:12px;font-weight:700;letter-spacing:0.06em;margin:0 0 12px;text-transform:uppercase;">HERO FEATURE</div>');
-    }
     if (title) {
       bodyParts.push(`<div style="font-size:18px;font-weight:700;margin:0 0 8px;color:#0B1220;">${escapeHTML(title)}</div>`);
     }
@@ -751,20 +748,20 @@ function buildEmailHTML() {
     out.push(`<div style="margin:0 0 24px;"><img src="${escapeHTML(heroImageData)}" alt="Banner" style="width:100%;height:auto;border-radius:20px;display:block;"></div>`);
   }
 
-  if (customer) {
-    out.push(`<div style="margin:0 0 12px;"><span style="display:inline-block;padding:8px 16px;border-radius:999px;background:${escapeHTML(panelColor)};color:${pillTextColor};font-weight:700;letter-spacing:0.03em;">${escapeHTML(customer)}</span></div>`);
-  }
-
-  if (referenceLine) {
-    out.push(`<div style="font-weight:600;font-size:14px;color:#5B6573;margin:0 0 16px;">${escapeHTML(referenceLine)}</div>`);
-  }
-
   if (heroTitle) {
     out.push(`<div style="font-size:30px;font-weight:800;line-height:1.2;margin:0 0 8px;">${escapeHTML(heroTitle)}</div>`);
   }
 
   if (heroSubtitle) {
     out.push(`<div style="font-size:18px;line-height:1.5;color:#5B6573;margin:0 0 24px;">${escapeHTML(heroSubtitle)}</div>`);
+  }
+
+  if (customer) {
+    out.push(`<div style="margin:0 0 12px;"><span style="display:inline-block;padding:8px 16px;border-radius:999px;background:${escapeHTML(panelColor)};color:${pillTextColor};font-weight:700;letter-spacing:0.03em;">${escapeHTML(customer)}</span></div>`);
+  }
+
+  if (referenceLine) {
+    out.push(`<div style="font-weight:600;font-size:14px;color:#5B6573;margin:0 0 16px;">${escapeHTML(referenceLine)}</div>`);
   }
 
   if (hasSummary || hasBenefits) {
@@ -1410,11 +1407,6 @@ function initializeApp() {
 
       if (feature.hero) {
         heroCount += 1;
-        const badge = doc.createElement('span');
-        badge.className = "badge hero-badge";
-        badge.textContent = "HERO FEATURE";
-        badge.style.alignSelf = "flex-start";
-        body.appendChild(badge);
       }
 
       if (titleText) {
