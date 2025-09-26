@@ -44,7 +44,13 @@ input[type=text],input[type=number],textarea,select{width:100%;padding:12px;bord
 .overview{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:10px}
 .overview .box{border:1px solid var(--line);border-radius:14px;padding:12px;background:#fff}
 .overview .title{font-weight:800;margin-bottom:6px;font-size:18px}
-@media print{.no-print{display:none!important@page { size: A4; margin: 12mm; } #page1{break-after: page;}}.pages{border:none;border-radius:0}.page{page-break-after:always}}
+@media print{
+  .no-print{display:none!important;}
+  @page{size:A4;margin:12mm;}
+  #page1{break-after:page;}
+  .pages{border:none;border-radius:0}
+  .page{page-break-after:always}
+}
 /* Fonts for in-app; email export re-inlines them */
 
 
