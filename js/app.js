@@ -689,14 +689,9 @@ function buildEmailHTML() {
 
   if (heroCards.length) {
     out.push('<section class="card hero-cards">');
- codex/update-hero-section-heading-in-buildemailhtml
     out.push('<div class="card-header"><h2>Key features</h2></div>');
     out.push('<div class="card-body hero-grid">');
-
-    out.push('<div class="card-header"><h2>Hero success stories</h2></div>');
-    out.push('<div class="card-body">');
     out.push('<table role="presentation" width="100%" style="width:100%;border-collapse:collapse;">');
- main
     for (const card of heroCards) {
       out.push('<tr>');
       out.push('<td style="padding:0 0 16px;vertical-align:top;">');
@@ -802,6 +797,9 @@ function initializeApp() {
   const termInput = doc.getElementById('term');
 
   const featureGrid = doc.getElementById('featureGrid');
+  const featuresPreviewLayout = doc.getElementById('featuresPreview');
+  const standardFeaturesColumn = doc.getElementById('standardFeaturesColumn');
+  const heroFeaturesColumn = doc.getElementById('heroFeaturesColumn');
   const featurePreview = doc.getElementById('featuresView');
   const heroFeaturePreview = doc.getElementById('heroCallouts');
   const addFeatureBtn = doc.getElementById('btnAddFeat');
@@ -1249,6 +1247,9 @@ function initializeApp() {
     if (!featurePreview && !heroFeaturePreview) {
       return;
     }
+    if (featuresPreviewLayout) {
+      featuresPreviewLayout.classList.remove('two-cols');
+    }
     const standardFeatures = [];
     const heroFeatures = [];
     for (const feature of state.features) {
@@ -1263,14 +1264,19 @@ function initializeApp() {
       if (!container) {
         return;
       }
+      const column = container === featurePreview ? standardFeaturesColumn : container === heroFeaturePreview ? heroFeaturesColumn : null;
       container.innerHTML = "";
       if (!items.length) {
-        if (container === heroFeaturePreview) {
+        if (column) {
+          column.style.display = "none";
+        } else if (container === heroFeaturePreview) {
           container.style.display = "none";
         }
         return;
       }
-      if (container === heroFeaturePreview) {
+      if (column) {
+        column.style.display = "";
+      } else if (container === heroFeaturePreview) {
         container.style.display = "";
       }
       for (const feature of items) {
@@ -1317,6 +1323,14 @@ function initializeApp() {
 
     renderFeatureCards(featurePreview, standardFeatures);
     renderFeatureCards(heroFeaturePreview, heroFeatures);
+    if (featuresPreviewLayout) {
+      if (standardFeatures.length && heroFeatures.length) {
+        featuresPreviewLayout.classList.add('two-cols');
+      } else {
+        featuresPreviewLayout.classList.remove('two-cols');
+      }
+      featuresPreviewLayout.style.display = standardFeatures.length || heroFeatures.length ? "" : "none";
+    }
   };
 
   let currentFeatureIndex = -1;
