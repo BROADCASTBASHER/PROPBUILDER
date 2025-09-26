@@ -130,6 +130,108 @@ function wrapTextLines(ctx, text, x, y, maxWidth, lineHeight, maxLines) {
   }
 }
 
+const TRANSPARENT_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==';
+
+const PRESETS = {
+  sand: { bg: '#FAF7F3', panel: '#E5E6EA', accent: '#F6F0E8', headline: '#1065FF', logo: 'Primary (Blue/Coral)' },
+  sky: { bg: '#1065FF', panel: '#E5E6EA', accent: '#0A4ED1', headline: '#FFFFFF', logo: 'Primary (Mono White)' },
+  coral: { bg: '#F66A51', panel: '#E5E6EA', accent: '#E95A44', headline: '#FFFFFF', logo: 'Primary (Mono White)' },
+  navy: { bg: '#122B5C', panel: '#E5E6EA', accent: '#0F244E', headline: '#FFFFFF', logo: 'Primary on Blue (White T)' },
+  ink: { bg: '#0B1220', panel: '#2C3440', accent: '#121A27', headline: '#FFFFFF', logo: 'Primary on Blue (White T)' }
+};
+
+const LOGO_ALIASES = {
+  'Mono – White': 'Primary (Mono White)',
+  'Mono – Black': 'Primary (Mono Black)',
+  'Primary (Blue/Coral)': 'Primary (Blue/Coral)',
+  'Primary on Blue (White T)': 'Primary on Blue (White T)',
+  'Primary on Coral (White T)': 'Primary on Coral (White T)'
+};
+
+const FEATURE_LIBRARY = [
+  {
+    t: 'Cloud-based flexibility (TIPT)',
+    c: 'Eliminate on-site PBX hardware with a scalable Telstra TIPT platform managed in the cloud.',
+    icon: 'pictoRecurringPayment104.png',
+    hero: true,
+    size: 80
+  },
+  {
+    t: 'Cisco 9861 IP handsets',
+    c: 'Colour display, HD audio and multi-line support give staff an intuitive desk experience.',
+    icon: 'pictoDeal104.png',
+    size: 72
+  },
+  {
+    t: 'Webex collaboration across devices',
+    c: 'Persistent messaging, meetings and calling keep your team connected anywhere on any device.',
+    icon: 'pictoTrackOrder104.png',
+    size: 68
+  },
+  {
+    t: 'Managed install & training',
+    c: 'Certified engineers configure call flows, port numbers and deliver tailored adoption sessions.',
+    icon: 'pictoGetInTouch104.png',
+    size: 68
+  },
+  {
+    t: 'Simple monthly billing',
+    c: 'Predictable pricing with unlimited AU calling and a contract that matches your preferred term.',
+    icon: 'pictoPaymentPlan104.png',
+    size: 64
+  },
+  {
+    t: 'Adoption support & care',
+    c: 'Change management resources and live support help staff embrace the new collaboration tools.',
+    icon: 'pictoAdultFemale104.png',
+    size: 64
+  }
+];
+
+const DEFAULT_PRICING_ITEMS = [
+  { label: 'TIPT Cloud Voice – Unlimited AU calls (Local/STD/Mobile)', qty: 6, unit: 'user', price: 0 },
+  { label: 'Cisco 9861 IP Phone (Colour Screen)', qty: 5, unit: 'device', price: 0 },
+  { label: 'Webex App (PC/Mobile) – Included with licences', qty: 6, unit: 'user', price: 0 },
+  { label: 'Professional install, programming & call-flow setup', qty: 1, unit: 'project', price: 0 }
+];
+
+const MAX_FEATURES = 12;
+const DEFAULT_DOC_TYPE = 'two';
+const DEFAULT_GST_MODE = 'ex';
+const DEFAULT_MONTHLY = 716;
+const DEFAULT_TERM = 36;
+const DEFAULT_BANNER_TEXT = 'Cloud voice for modern schools & businesses';
+
+const state = {
+  preset: 'navy',
+  banner: {
+    text: DEFAULT_BANNER_TEXT,
+    bold: true,
+    layout: 'left',
+    size: '1000x300',
+    fit: 'contain',
+    scale: 1,
+    offsetX: 0,
+    offsetY: 0,
+    logoMode: 'auto'
+  },
+  docType: DEFAULT_DOC_TYPE,
+  features: [],
+  pricing: {
+    gst: DEFAULT_GST_MODE,
+    items: [],
+    monthly: DEFAULT_MONTHLY,
+    term: DEFAULT_TERM
+  }
+};
+
+if (typeof window !== 'undefined') {
+  window.state = state;
+  window._features = state.features;
+}
+
+let bannerPanelImage = null;
+
 function bulletify(input) {
   const lines = String(input == null ? '' : input)
     .split(/\r?\n/)
@@ -601,6 +703,962 @@ function buildEmailHTML() {
   return out.join('');
 }
 
+function initializeApp() {
+  if (typeof document === 'undefined') {
+    return;
+  }
+
+  const doc = document;
+  const logoMap = (typeof window !== 'undefined' && window.__LOGO_DATA__ && typeof window.__LOGO_DATA__ === 'object')
+    ? window.__LOGO_DATA__
+    : {};
+  const iconMap = (typeof window !== 'undefined' && window.__ICON_DATA__ && typeof window.__ICON_DATA__ === 'object')
+    ? window.__ICON_DATA__
+    : {};
+  const currency = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' });
+
+  const bannerCanvas = doc.getElementById('banner');
+  const bannerCtx = bannerCanvas && typeof bannerCanvas.getContext === 'function'
+    ? bannerCanvas.getContext('2d')
+    : null;
+
+  const bannerTextInput = doc.getElementById('bannerTxt');
+  const bannerBoldInput = doc.getElementById('bnBold');
+  const bannerLayoutSelect = doc.getElementById('bannerLayout');
+  const presetSelect = doc.getElementById('preset');
+  const bannerSizeSelect = doc.getElementById('bannerSize');
+  const bannerLogoSelect = doc.getElementById('bannerLogoMode');
+  const bannerScale = doc.getElementById('bnScale');
+  const bannerOffsetX = doc.getElementById('bnX');
+  const bannerOffsetY = doc.getElementById('bnY');
+  const bannerBrowse = doc.getElementById('btnBrowse');
+  const bannerUpload = doc.getElementById('bannerUpload');
+  const bannerUse = doc.getElementById('btnBannerUse');
+  const bannerDownload = doc.getElementById('btnBannerDownload');
+
+  const docTypeSelect = doc.getElementById('docType');
+  const gstModeSelect = doc.getElementById('gstMode');
+  const customerInput = doc.getElementById('customer');
+  const refInput = doc.getElementById('ref');
+  const heroInput = doc.getElementById('hero');
+  const subHeroInput = doc.getElementById('subHero');
+  const summaryInput = doc.getElementById('summaryEdit');
+  const benefitsInput = doc.getElementById('benefitsEdit');
+  const assumptionsInput = doc.getElementById('assumptionsEdit');
+  const monthlyInput = doc.getElementById('monthly');
+  const termInput = doc.getElementById('term');
+
+  const featureGrid = doc.getElementById('featureGrid');
+  const featurePreview = doc.getElementById('featuresView');
+  const addFeatureBtn = doc.getElementById('btnAddFeat');
+  const iconModal = doc.getElementById('iconModal');
+  const iconGallery = doc.getElementById('iconGallery');
+  const iconUpload = doc.getElementById('iconUpload');
+  const closeIconBtn = doc.getElementById('closeIcon');
+
+  const pricingTabs = Array.from(doc.querySelectorAll('#tab-pricing .ps-tab'));
+  const pricingPanels = {
+    edit: doc.getElementById('ps-edit'),
+    preview: doc.getElementById('ps-preview')
+  };
+  const itemsContainer = doc.getElementById('items');
+  const addItemBtn = doc.getElementById('btnAddItem');
+  const priceTableEdit = doc.querySelector('#priceTable tbody');
+  const priceTablePreview = doc.querySelector('#priceTableView tbody');
+  const priceTableGhost = doc.querySelector('#priceTableGhost tbody');
+  const thPrice = doc.getElementById('thPrice');
+  const thPriceGhost = doc.getElementById('thPriceGhost');
+  const thPriceView = doc.getElementById('thPriceV');
+
+  const pvCustomer = doc.getElementById('pvCustomer');
+  const pvRef = doc.getElementById('pvRef');
+  const pvSummary = doc.getElementById('pvSummary');
+  const pvBenefits = doc.getElementById('pvBenefits');
+  const pvHero = doc.getElementById('pvHero');
+  let pvSub = doc.getElementById('pvSub');
+  const pvMonthly = doc.getElementById('pvMonthly');
+  const pvMonthlyGhost = doc.getElementById('pvMonthlyGhost');
+  const pvTerm = doc.getElementById('pvTerm2');
+  const pvTermGhost = doc.getElementById('pvTerm2Ghost');
+  const assumptionsList = doc.getElementById('assumptions');
+  const assumptionsGhost = doc.getElementById('assumptionsGhost');
+  const pageBanner = doc.getElementById('pageBanner');
+  const previewHeroImg = doc.querySelector('#tab-preview .hero img');
+  const pageTwo = doc.getElementById('page2');
+
+  const modeBadge = doc.getElementById('modeBadge');
+  const topTabs = doc.getElementById('topTabs');
+  const emailButton = doc.getElementById('btnEmail');
+
+  if (!pvSub && pvHero && pvHero.parentElement) {
+    pvSub = doc.createElement('div');
+    pvSub.id = 'pvSub';
+    pvSub.style.fontSize = '18px';
+    pvSub.style.color = '#5B6573';
+    pvSub.style.marginTop = '6px';
+    pvHero.parentElement.appendChild(pvSub);
+  }
+
+  state.preset = presetSelect ? (presetSelect.value || state.preset) : state.preset;
+  state.banner.text = bannerTextInput ? (bannerTextInput.value || DEFAULT_BANNER_TEXT) : DEFAULT_BANNER_TEXT;
+  state.banner.bold = bannerBoldInput ? Boolean(bannerBoldInput.checked) : state.banner.bold;
+  state.banner.layout = bannerLayoutSelect ? (bannerLayoutSelect.value || state.banner.layout) : state.banner.layout;
+  state.banner.size = bannerSizeSelect ? (bannerSizeSelect.value || state.banner.size) : state.banner.size;
+  state.banner.logoMode = bannerLogoSelect ? (bannerLogoSelect.value || state.banner.logoMode) : state.banner.logoMode;
+  state.banner.scale = bannerScale ? (Number(bannerScale.value) || 1) : state.banner.scale;
+  state.banner.offsetX = bannerOffsetX ? (Number(bannerOffsetX.value) || 0) : state.banner.offsetX;
+  state.banner.offsetY = bannerOffsetY ? (Number(bannerOffsetY.value) || 0) : state.banner.offsetY;
+  state.banner.fit = fitRadio ? fitRadio.value : state.banner.fit;
+
+  state.docType = docTypeSelect ? (docTypeSelect.value || DEFAULT_DOC_TYPE) : DEFAULT_DOC_TYPE;
+  state.pricing.gst = gstModeSelect ? (gstModeSelect.value || DEFAULT_GST_MODE) : DEFAULT_GST_MODE;
+  state.pricing.monthly = monthlyInput ? (Number(monthlyInput.value) || DEFAULT_MONTHLY) : DEFAULT_MONTHLY;
+  state.pricing.term = termInput ? (Number(termInput.value) || DEFAULT_TERM) : DEFAULT_TERM;
+  const fitRadio = doc.querySelector('input[name="fit"]:checked');
+
+  const resolveIcon = (name) => {
+    if (name && iconMap[name]) {
+      return iconMap[name];
+    }
+    const keys = Object.keys(iconMap);
+    if (keys.length) {
+      return iconMap[keys[0]];
+    }
+    return TRANSPARENT_PNG;
+  };
+
+  const resolveLogoKey = (requested) => {
+    if (!requested || requested === "auto") {
+      const preset = PRESETS[state.preset] || PRESETS.navy;
+      return preset.logo;
+    }
+    if (LOGO_ALIASES[requested]) {
+      return LOGO_ALIASES[requested];
+    }
+    return requested;
+  };
+
+  const resolveLogo = () => {
+    const key = resolveLogoKey(state.banner.logoMode);
+    if (logoMap[key]) {
+      return logoMap[key];
+    }
+    const fallback = PRESETS.navy.logo;
+    if (logoMap[fallback]) {
+      return logoMap[fallback];
+    }
+    const keys = Object.keys(logoMap);
+    if (keys.length) {
+      return logoMap[keys[0]];
+    }
+    return TRANSPARENT_PNG;
+  };
+
+  state.features.length = 0;
+  if (Array.isArray(window._features) && window._features.length) {
+    for (const feature of window._features) {
+      state.features.push({
+        t: String(feature.t || feature.title || ""),
+        c: String(feature.c || feature.copy || ""),
+        img: feature.img || feature.image || resolveIcon(feature.icon),
+        hero: Boolean(feature.hero),
+        size: Number(feature.size || feature.width || 56) || 56
+      });
+    }
+  } else {
+    for (const template of FEATURE_LIBRARY) {
+      state.features.push({
+        t: template.t,
+        c: template.c,
+        img: resolveIcon(template.icon),
+        hero: Boolean(template.hero),
+        size: Number(template.size) || 56
+      });
+    }
+  }
+  window._features = state.features;
+
+  state.pricing.items = (Array.isArray(state.pricing.items) && state.pricing.items.length
+    ? state.pricing.items
+    : DEFAULT_PRICING_ITEMS).map((item) => ({
+    label: String(item.label || ""),
+    qty: Number(item.qty) || 0,
+    unit: String(item.unit || ""),
+    price: Number(item.price) || 0
+  }));
+
+  const toCurrency = (value) => {
+    const formatted = currency.format(Math.max(0, value));
+    if (formatted.startsWith('$')) {
+      return `A$${formatted.slice(1)}`;
+    }
+    return formatted;
+  };
+
+  const pushBannerToPreview = () => {
+    if (!bannerCanvas || typeof bannerCanvas.toDataURL !== "function") {
+      return;
+    }
+    try {
+      const data = bannerCanvas.toDataURL('image/png');
+      if (pageBanner) {
+        pageBanner.src = data;
+      }
+      if (previewHeroImg) {
+        previewHeroImg.src = data;
+      }
+    } catch (error) {
+      // ignore canvas taint errors
+    }
+  };
+
+  const clipRoundedRect = (ctx, x, y, w, h, r) => {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+    ctx.clip();
+  };
+
+  const drawBanner = () => {
+    if (!bannerCanvas || !bannerCtx) {
+      return;
+    }
+
+    const [width, height] = parseSize(state.banner.size, 1000, 300);
+    bannerCanvas.width = width;
+    bannerCanvas.height = height;
+
+    const preset = PRESETS[state.preset] || PRESETS.navy;
+    bannerCtx.clearRect(0, 0, width, height);
+    bannerCtx.fillStyle = preset.bg;
+    bannerCtx.fillRect(0, 0, width, height);
+
+    const isHeadlineOnly = state.banner.layout === "headline";
+    const panelWidth = Math.round(width * 0.42);
+    const panelX = state.banner.layout === "left" ? 0 : width - panelWidth;
+
+    if (!isHeadlineOnly) {
+      bannerCtx.save();
+      bannerCtx.fillStyle = preset.panel;
+      bannerCtx.fillRect(panelX, 0, panelWidth, height);
+      if (bannerPanelImage && bannerPanelImage.complete && bannerPanelImage.naturalWidth > 0) {
+        const baseScaleX = panelWidth / bannerPanelImage.naturalWidth;
+        const baseScaleY = height / bannerPanelImage.naturalHeight;
+        const fitScale = state.banner.fit === "cover" ? Math.max(baseScaleX, baseScaleY) : Math.min(baseScaleX, baseScaleY);
+        const finalScale = fitScale * (state.banner.scale || 1);
+        const renderWidth = bannerPanelImage.naturalWidth * finalScale;
+        const renderHeight = bannerPanelImage.naturalHeight * finalScale;
+        let drawX = panelX + (panelWidth - renderWidth) / 2;
+        let drawY = (height - renderHeight) / 2;
+        if (state.banner.fit === "cover") {
+          drawX += (Number(state.banner.offsetX || 0) / 100) * (panelWidth / 2);
+          drawY += (Number(state.banner.offsetY || 0) / 100) * (height / 2);
+        }
+        bannerCtx.save();
+        clipRoundedRect(bannerCtx, panelX, 0, panelWidth, height, Math.round(height * 0.18));
+        bannerCtx.drawImage(bannerPanelImage, drawX, drawY, renderWidth, renderHeight);
+        bannerCtx.restore();
+      }
+      bannerCtx.restore();
+    }
+
+    const accentHeight = Math.max(8, Math.round(height * 0.04));
+    bannerCtx.fillStyle = preset.accent;
+    bannerCtx.fillRect(0, height - accentHeight, width, accentHeight);
+
+    const textPadding = 24;
+    const textMaxWidth = isHeadlineOnly ? (width - (textPadding * 2)) : (width - panelWidth - (textPadding * 2));
+    const textX = state.banner.layout === "left" && !isHeadlineOnly
+      ? panelWidth + textPadding
+      : textPadding;
+    const textY = Math.round(height * (isHeadlineOnly ? 0.25 : 0.32));
+    const maxLines = isHeadlineOnly ? 2 : 3;
+    const weight = state.banner.bold ? "700" : "400";
+
+    let fontSize = Math.max(26, Math.round(height * 0.2));
+    const minFontSize = Math.max(20, Math.round(fontSize * 0.7));
+    const measureFits = (size) => {
+      bannerCtx.font = `${weight} ${size}px TelstraText, Arial, sans-serif`;
+      const words = String(state.banner.text || "").split(/\s+/).filter(Boolean);
+      if (!words.length) {
+        return true;
+      }
+      let line = "";
+      let linesCount = 1;
+      for (const word of words) {
+        const candidate = line ? `${line} ${word}` : word;
+        if (bannerCtx.measureText(candidate).width <= textMaxWidth) {
+          line = candidate;
+        } else {
+          linesCount += 1;
+          if (linesCount > maxLines) {
+            return false;
+          }
+          line = word;
+        }
+      }
+      return true;
+    };
+
+    while (fontSize > minFontSize && !measureFits(fontSize)) {
+      fontSize -= 1;
+    }
+
+    bannerCtx.font = `${weight} ${fontSize}px TelstraText, Arial, sans-serif`;
+    bannerCtx.fillStyle = preset.headline;
+    bannerCtx.textBaseline = "top";
+    wrapTextLines(bannerCtx, state.banner.text || "", textX, textY, textMaxWidth, Math.round(fontSize * 1.12), maxLines);
+
+    const logoSrc = resolveLogo();
+    if (logoSrc) {
+      const logoImage = new Image();
+      logoImage.onload = () => {
+        const padding = Math.round(height * 0.08);
+        const maxLogoHeight = Math.round(height * 0.26);
+        const ratio = logoImage.naturalWidth > 0 ? logoImage.naturalWidth / logoImage.naturalHeight : 1;
+        const logoHeight = maxLogoHeight;
+        const logoWidth = Math.round(logoHeight * ratio);
+        let logoX;
+        if (isHeadlineOnly || state.banner.layout === "left") {
+          logoX = width - logoWidth - padding;
+        } else if (state.banner.layout === "right") {
+          logoX = padding;
+        } else {
+          logoX = width - logoWidth - padding;
+        }
+        const logoY = padding;
+        bannerCtx.drawImage(logoImage, logoX, logoY, logoWidth, logoHeight);
+        pushBannerToPreview();
+      };
+      logoImage.src = logoSrc;
+    } else {
+      pushBannerToPreview();
+    }
+  };
+
+  const renderFeaturePreview = () => {
+    if (!featurePreview) {
+      return;
+    }
+    featurePreview.innerHTML = "";
+    for (const feature of state.features) {
+      const card = doc.createElement('div');
+      card.className = `feature${feature.hero ? " hero" : ""}`;
+
+      const iconWrap = doc.createElement('div');
+      iconWrap.className = "icon";
+      const size = Number(feature.size) || 56;
+      iconWrap.style.width = `${size}px`;
+      iconWrap.style.height = `${size}px`;
+      const img = doc.createElement('img');
+      img.src = feature.img || resolveIcon(feature.icon);
+      iconWrap.appendChild(img);
+      card.appendChild(iconWrap);
+
+      const body = doc.createElement('div');
+      body.style.minWidth = "0";
+      if (feature.t) {
+        const title = doc.createElement('div');
+        title.style.fontWeight = "700";
+        title.style.fontSize = "18px";
+        title.style.marginBottom = "4px";
+        title.textContent = feature.t;
+        body.appendChild(title);
+      }
+      if (feature.c) {
+        if (feature.c.includes('\n')) {
+          const list = doc.createElement('ul');
+          list.innerHTML = bulletify(feature.c);
+          body.appendChild(list);
+        } else {
+          const copy = doc.createElement('div');
+          copy.className = "note";
+          copy.style.fontSize = "16px";
+          copy.textContent = feature.c;
+          body.appendChild(copy);
+        }
+      }
+      card.appendChild(body);
+      featurePreview.appendChild(card);
+    }
+  };
+
+  let currentFeatureIndex = -1;
+  let iconGalleryBuilt = false;
+
+  const closeIconModal = () => {
+    currentFeatureIndex = -1;
+    if (iconModal) {
+      iconModal.style.display = "none";
+    }
+  };
+
+  const renderIconGallery = () => {
+    if (!iconGallery || iconGalleryBuilt) {
+      return;
+    }
+    const entries = Object.entries(iconMap);
+    if (!entries.length) {
+      iconGallery.innerHTML = '<div class="note">No bundled icons available. Upload your own icon instead.</div>';
+      iconGalleryBuilt = true;
+      return;
+    }
+    iconGallery.innerHTML = "";
+    for (const [name, src] of entries) {
+      const item = doc.createElement('div');
+      item.className = "item";
+      const img = doc.createElement('img');
+      img.src = src;
+      img.alt = name;
+      item.title = name;
+      item.appendChild(img);
+      item.addEventListener('click', () => {
+        if (currentFeatureIndex >= 0 && state.features[currentFeatureIndex]) {
+          state.features[currentFeatureIndex].img = src;
+          state.features[currentFeatureIndex].imgName = name;
+          renderFeatureGrid();
+          renderFeaturePreview();
+          closeIconModal();
+        }
+      });
+      iconGallery.appendChild(item);
+    }
+    iconGalleryBuilt = true;
+  };
+
+  const renderFeatureGrid = () => {
+    if (!featureGrid) {
+      return;
+    }
+    featureGrid.innerHTML = "";
+    state.features.forEach((feature, index) => {
+      const card = doc.createElement('div');
+      card.className = `feature${feature.hero ? " hero" : ""}`;
+
+      const left = doc.createElement('div');
+      left.className = "copy";
+      left.style.display = "flex";
+      left.style.gap = "12px";
+      left.style.flex = "1 1 320px";
+      left.style.minWidth = "0";
+
+      const iconWrap = doc.createElement('div');
+      iconWrap.className = "icon";
+      const size = Number(feature.size) || 56;
+      iconWrap.style.width = `${size}px`;
+      iconWrap.style.height = `${size}px`;
+      const img = doc.createElement('img');
+      img.src = feature.img || resolveIcon(feature.icon);
+      iconWrap.appendChild(img);
+      left.appendChild(iconWrap);
+
+      const textCol = doc.createElement('div');
+      textCol.className = "copy";
+      textCol.style.minWidth = "0";
+
+      const titleInput = doc.createElement('input');
+      titleInput.type = "text";
+      titleInput.value = feature.t || "";
+      titleInput.placeholder = "Feature title";
+      titleInput.addEventListener('input', (event) => {
+        feature.t = event.target.value;
+        renderFeaturePreview();
+      });
+
+      const bodyInput = doc.createElement('textarea');
+      bodyInput.value = feature.c || "";
+      bodyInput.placeholder = "Details or bullet points (one per line)";
+      bodyInput.addEventListener('input', (event) => {
+        feature.c = event.target.value;
+        renderFeaturePreview();
+      });
+
+      textCol.appendChild(titleInput);
+      textCol.appendChild(bodyInput);
+      left.appendChild(textCol);
+      card.appendChild(left);
+
+      const right = doc.createElement('div');
+      right.className = "controls";
+
+      const chooseBtn = doc.createElement('button');
+      chooseBtn.type = "button";
+      chooseBtn.className = "btn";
+      chooseBtn.textContent = "Choose icon";
+      chooseBtn.addEventListener('click', () => {
+        currentFeatureIndex = index;
+        if (iconModal) {
+          iconModal.style.display = "flex";
+          renderIconGallery();
+        }
+      });
+
+      const uploadInput = doc.createElement('input');
+      uploadInput.type = "file";
+      uploadInput.accept = "image/*";
+      uploadInput.addEventListener('change', (event) => {
+        const file = event.target.files && event.target.files[0];
+        if (!file) {
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+          feature.img = reader.result || feature.img;
+          renderFeatureGrid();
+          renderFeaturePreview();
+        };
+        reader.readAsDataURL(file);
+      });
+
+      const heroLabel = doc.createElement('label');
+      heroLabel.className = "chk";
+      const heroToggle = doc.createElement('input');
+      heroToggle.type = "checkbox";
+      heroToggle.checked = Boolean(feature.hero);
+      heroToggle.addEventListener('change', (event) => {
+        feature.hero = Boolean(event.target.checked);
+        renderFeatureGrid();
+        renderFeaturePreview();
+      });
+      heroLabel.appendChild(heroToggle);
+      heroLabel.appendChild(doc.createTextNode('Hero (span columns)'));
+
+      const sizeWrap = doc.createElement('div');
+      const sizeLabel = doc.createElement('label');
+      sizeLabel.className = "note";
+      sizeLabel.textContent = "Icon size";
+      const sizeInput = doc.createElement('input');
+      sizeInput.type = "range";
+      sizeInput.min = "40";
+      sizeInput.max = "120";
+      sizeInput.step = "1";
+      sizeInput.value = Number(feature.size) || 56;
+      sizeInput.addEventListener('input', (event) => {
+        feature.size = Number(event.target.value) || 56;
+        renderFeatureGrid();
+        renderFeaturePreview();
+      });
+      sizeWrap.appendChild(sizeLabel);
+      sizeWrap.appendChild(sizeInput);
+
+      const removeBtn = doc.createElement('button');
+      removeBtn.type = "button";
+      removeBtn.className = "btn";
+      removeBtn.textContent = "Remove";
+      removeBtn.addEventListener('click', () => {
+        state.features.splice(index, 1);
+        renderFeatureGrid();
+        renderFeaturePreview();
+      });
+
+      const reorderRow = doc.createElement('div');
+      reorderRow.className = "reorder";
+      const upBtn = doc.createElement('button');
+      upBtn.type = "button";
+      upBtn.className = "btn-xs";
+      upBtn.textContent = "↑ Up";
+      upBtn.disabled = index === 0;
+      upBtn.addEventListener('click', () => {
+        if (index > 0) {
+          const swap = state.features[index - 1];
+          state.features[index - 1] = state.features[index];
+          state.features[index] = swap;
+          renderFeatureGrid();
+          renderFeaturePreview();
+        }
+      });
+      const downBtn = doc.createElement('button');
+      downBtn.type = "button";
+      downBtn.className = "btn-xs";
+      downBtn.textContent = "↓ Down";
+      downBtn.disabled = index === state.features.length - 1;
+      downBtn.addEventListener('click', () => {
+        if (index < state.features.length - 1) {
+          const swap = state.features[index + 1];
+          state.features[index + 1] = state.features[index];
+          state.features[index] = swap;
+          renderFeatureGrid();
+          renderFeaturePreview();
+        }
+      });
+      reorderRow.appendChild(upBtn);
+      reorderRow.appendChild(downBtn);
+
+      right.appendChild(chooseBtn);
+      right.appendChild(uploadInput);
+      right.appendChild(heroLabel);
+      right.appendChild(sizeWrap);
+      right.appendChild(removeBtn);
+      right.appendChild(reorderRow);
+
+      card.appendChild(right);
+      featureGrid.appendChild(card);
+    });
+  };
+
+  const renderBenefits = () => {
+    if (pvBenefits && benefitsInput) {
+      pvBenefits.innerHTML = bulletify(benefitsInput.value);
+    }
+  };
+
+  const renderAssumptions = () => {
+    const html = assumptionsInput ? bulletify(assumptionsInput.value) : "";
+    if (assumptionsList) {
+      assumptionsList.innerHTML = html;
+    }
+    if (assumptionsGhost) {
+      assumptionsGhost.innerHTML = html;
+    }
+  };
+
+  const syncTotals = () => {
+    const monthlyValue = Number(monthlyInput ? monthlyInput.value : state.pricing.monthly) || 0;
+    state.pricing.monthly = monthlyValue;
+    const termValue = Number(termInput ? termInput.value : state.pricing.term) || 0;
+    state.pricing.term = termValue;
+    const displayMonthly = state.pricing.gst === "inc" ? monthlyValue * 1.1 : monthlyValue;
+    const monthlyLabel = state.pricing.gst === "inc" ? "inc GST" : "ex GST";
+    if (pvMonthly) {
+      pvMonthly.textContent = `${toCurrency(displayMonthly)} ${monthlyLabel}`;
+    }
+    if (pvMonthlyGhost) {
+      pvMonthlyGhost.textContent = `${toCurrency(displayMonthly)} ${monthlyLabel}`;
+    }
+    const termLabel = termValue ? `${termValue} months` : "";
+    if (pvTerm) {
+      pvTerm.textContent = termLabel ? `Term: ${termLabel}` : "";
+    }
+    if (pvTermGhost) {
+      pvTermGhost.textContent = termLabel ? `Term: ${termLabel}` : "";
+    }
+  };
+
+  const syncPreview = () => {
+    if (customerInput && pvCustomer) {
+      const value = customerInput.value.trim();
+      pvCustomer.textContent = value || "Customer";
+    }
+    if (refInput && pvRef) {
+      const value = refInput.value.trim();
+      pvRef.textContent = value ? `Ref: ${value}` : "";
+    }
+    if (heroInput && pvHero) {
+      const value = heroInput.value.trim();
+      pvHero.textContent = value || DEFAULT_BANNER_TEXT;
+    }
+    if (subHeroInput && pvSub) {
+      pvSub.textContent = subHeroInput.value.trim();
+    }
+    if (summaryInput && pvSummary) {
+      pvSummary.textContent = summaryInput.value;
+    }
+    renderBenefits();
+    renderAssumptions();
+    renderFeaturePreview();
+    syncTotals();
+    if (docTypeSelect && pageTwo) {
+      const value = docTypeSelect.value || DEFAULT_DOC_TYPE;
+      state.docType = value;
+      pageTwo.style.display = value === "two" ? "block" : "none";
+    }
+  };
+
+  const setupTabs = () => {
+    if (!topTabs) {
+      return;
+    }
+    const tabs = Array.from(topTabs.querySelectorAll('.tab'));
+    if (!tabs.length) {
+      return;
+    }
+    const sections = new Map();
+    tabs.forEach((tab) => {
+      const target = tab.dataset ? tab.dataset.tab : undefined;
+      if (target) {
+        const panel = doc.getElementById(`tab-${target}`);
+        if (panel) {
+          sections.set(tab, panel);
+        }
+      }
+    });
+    if (!sections.size) {
+      return;
+    }
+    const applyBadge = (isPreview) => {
+      if (doc.body) {
+        doc.body.classList.toggle('editing', !isPreview);
+        doc.body.classList.toggle('previewing', isPreview);
+      }
+      if (!modeBadge) {
+        return;
+      }
+      if (isPreview) {
+        modeBadge.textContent = "CUSTOMER VIEW";
+        modeBadge.style.background = "#E7F8EE";
+        modeBadge.style.border = "1px solid #C8F0DA";
+        modeBadge.style.color = "#116D4C";
+      } else {
+        modeBadge.textContent = "EDIT MODE";
+        modeBadge.style.background = "#EEF2FF";
+        modeBadge.style.border = "1px solid #DDE3FF";
+        modeBadge.style.color = "#122B5C";
+      }
+    };
+    const activate = (tab) => {
+      if (!sections.has(tab)) {
+        return;
+      }
+      tabs.forEach((btn) => { btn.classList.remove('active'); });
+      sections.forEach((panel) => { panel.style.display = "none"; });
+      tab.classList.add('active');
+      const panel = sections.get(tab);
+      if (panel) {
+        panel.style.display = "block";
+      }
+      applyBadge(tab.dataset && tab.dataset.tab === "preview");
+    };
+    tabs.forEach((tab) => {
+      tab.addEventListener('click', () => activate(tab));
+    });
+    const initial = tabs.find((tab) => tab.classList.contains('active') && sections.has(tab)) || tabs[0];
+    if (initial) {
+      activate(initial);
+    }
+  };
+
+  const setupPricingTabs = () => {
+    if (!pricingTabs.length) {
+      return;
+    }
+    const activate = (tab) => {
+      pricingTabs.forEach((btn) => btn.classList.remove('active'));
+      tab.classList.add('active');
+      const target = tab.dataset ? tab.dataset.ps : undefined;
+      Object.entries(pricingPanels).forEach(([name, panel]) => {
+        if (!panel) {
+          return;
+        }
+        panel.style.display = name === target ? "block" : "none";
+      });
+    };
+    pricingTabs.forEach((tab) => {
+      tab.addEventListener('click', () => activate(tab));
+    });
+    const initial = pricingTabs.find((tab) => tab.classList.contains('active')) || pricingTabs[0];
+    if (initial) {
+      activate(initial);
+    }
+  };
+
+  if (closeIconBtn) {
+    closeIconBtn.addEventListener('click', closeIconModal);
+  }
+  if (iconModal) {
+    iconModal.addEventListener('click', (event) => {
+      if (event.target === iconModal) {
+        closeIconModal();
+      }
+    });
+  }
+  if (iconUpload) {
+    iconUpload.addEventListener('change', (event) => {
+      const file = event.target.files && event.target.files[0];
+      if (!file) {
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (currentFeatureIndex >= 0 && state.features[currentFeatureIndex]) {
+          state.features[currentFeatureIndex].img = reader.result || state.features[currentFeatureIndex].img;
+          renderFeatureGrid();
+          renderFeaturePreview();
+          closeIconModal();
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  if (addFeatureBtn) {
+    addFeatureBtn.addEventListener('click', () => {
+      if (state.features.length >= MAX_FEATURES) {
+        return;
+      }
+      state.features.push({
+        t: "New feature",
+        c: "Describe the benefit...",
+        img: resolveIcon(),
+        hero: false,
+        size: 56
+      });
+      renderFeatureGrid();
+      renderFeaturePreview();
+    });
+  }
+
+  if (bannerTextInput) {
+    bannerTextInput.addEventListener('input', (event) => {
+      state.banner.text = event.target.value;
+      drawBanner();
+    });
+  }
+  if (bannerBoldInput) {
+    bannerBoldInput.addEventListener('change', (event) => {
+      state.banner.bold = Boolean(event.target.checked);
+      drawBanner();
+    });
+  }
+  if (bannerLayoutSelect) {
+    bannerLayoutSelect.addEventListener('change', (event) => {
+      state.banner.layout = event.target.value || state.banner.layout;
+      drawBanner();
+    });
+  }
+  if (presetSelect) {
+    presetSelect.addEventListener('change', (event) => {
+      state.preset = event.target.value || state.preset;
+      drawBanner();
+    });
+  }
+  if (bannerSizeSelect) {
+    bannerSizeSelect.addEventListener('change', (event) => {
+      state.banner.size = event.target.value || state.banner.size;
+      drawBanner();
+    });
+  }
+  if (bannerLogoSelect) {
+    bannerLogoSelect.addEventListener('change', (event) => {
+      state.banner.logoMode = event.target.value || "auto";
+      drawBanner();
+    });
+  }
+  if (bannerScale) {
+    bannerScale.addEventListener('input', (event) => {
+      state.banner.scale = Number(event.target.value) || 1;
+      drawBanner();
+    });
+  }
+  if (bannerOffsetX) {
+    bannerOffsetX.addEventListener('input', (event) => {
+      state.banner.offsetX = Number(event.target.value) || 0;
+      drawBanner();
+    });
+  }
+  if (bannerOffsetY) {
+    bannerOffsetY.addEventListener('input', (event) => {
+      state.banner.offsetY = Number(event.target.value) || 0;
+      drawBanner();
+    });
+  }
+  const fitOptions = Array.from(doc.querySelectorAll('input[name="fit"]'));
+  fitOptions.forEach((option) => {
+    option.addEventListener('change', (event) => {
+      if (event.target.checked) {
+        state.banner.fit = event.target.value || state.banner.fit;
+        drawBanner();
+      }
+    });
+  });
+
+  if (bannerBrowse && bannerUpload) {
+    bannerBrowse.addEventListener('click', () => bannerUpload.click());
+  }
+  if (bannerUpload) {
+    bannerUpload.addEventListener('change', (event) => {
+      const file = event.target.files && event.target.files[0];
+      if (!file) {
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        bannerPanelImage = new Image();
+        bannerPanelImage.onload = drawBanner;
+        bannerPanelImage.src = reader.result || "";
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+  if (bannerUse) {
+    bannerUse.addEventListener('click', () => {
+      drawBanner();
+      pushBannerToPreview();
+    });
+  }
+  if (bannerDownload) {
+    bannerDownload.addEventListener('click', () => {
+      if (!bannerCanvas) {
+        return;
+      }
+      const link = doc.createElement('a');
+      link.href = bannerCanvas.toDataURL('image/png');
+      link.download = "proposal-banner.png";
+      doc.body.appendChild(link);
+      link.click();
+      doc.body.removeChild(link);
+    });
+  }
+
+  const inputHandlers = [
+    [customerInput, syncPreview],
+    [refInput, syncPreview],
+    [heroInput, syncPreview],
+    [subHeroInput, syncPreview],
+    [summaryInput, syncPreview],
+    [benefitsInput, () => { renderBenefits(); renderFeaturePreview(); }],
+    [assumptionsInput, renderAssumptions],
+    [monthlyInput, () => { syncTotals(); renderPriceTables(); }],
+    [termInput, syncTotals],
+    [docTypeSelect, syncPreview],
+  ];
+  inputHandlers.forEach(([el, handler]) => {
+    if (el && typeof el.addEventListener === "function") {
+      el.addEventListener('input', handler);
+      el.addEventListener('change', handler);
+    }
+  });
+
+  if (gstModeSelect) {
+    gstModeSelect.addEventListener('change', (event) => {
+      state.pricing.gst = event.target.value || DEFAULT_GST_MODE;
+      renderPriceTables();
+      syncTotals();
+    });
+  }
+
+  if (addItemBtn) {
+    addItemBtn.addEventListener('click', () => {
+      state.pricing.items.push({ label: "", qty: 1, unit: "", price: 0 });
+      renderItems();
+      renderPriceTables();
+    });
+  }
+
+  setupTabs();
+  setupPricingTabs();
+  renderFeatureGrid();
+  renderFeaturePreview();
+  renderItems();
+  renderPriceTables();
+  renderBenefits();
+  renderAssumptions();
+  syncTotals();
+  syncPreview();
+  drawBanner();
+
+  if (emailButton) {
+    emailButton.addEventListener('click', () => downloadEmailHTML());
+  }
+}
+
 function downloadEmailHTML() {
   if (typeof document === 'undefined') {
     return;
@@ -625,63 +1683,7 @@ function downloadEmailHTML() {
     return;
   }
   document.addEventListener('DOMContentLoaded', () => {
-    const emailButton = document.getElementById('btnEmail');
-    if (emailButton) {
-      emailButton.addEventListener('click', () => {
-        downloadEmailHTML();
-      });
-    }
-
-    const tabContainer = document.getElementById('topTabs');
-    if (tabContainer) {
-      const tabs = Array.from(tabContainer.querySelectorAll('.tab'));
-      if (tabs.length) {
-        const panels = new Map();
-        for (const tab of tabs) {
-          const target = tab.dataset ? tab.dataset.tab : undefined;
-          if (!target) {
-            continue;
-          }
-          const panel = document.getElementById(`tab-${target}`);
-          if (panel) {
-            panels.set(tab, panel);
-          }
-        }
-
-        if (panels.size) {
-          const allPanels = Array.from(new Set(panels.values()));
-
-          const activateTab = (tab) => {
-            if (!panels.has(tab)) {
-              return;
-            }
-            for (const candidate of tabs) {
-              candidate.classList.remove('active');
-            }
-            for (const panel of allPanels) {
-              panel.style.display = 'none';
-            }
-            const panel = panels.get(tab);
-            tab.classList.add('active');
-            if (panel) {
-              panel.style.display = '';
-            }
-          };
-
-          for (const tab of tabs) {
-            tab.addEventListener('click', () => {
-              activateTab(tab);
-            });
-          }
-
-          const initialActive = tabs.find((tab) => tab.classList.contains('active') && panels.has(tab))
-            || tabs.find((tab) => panels.has(tab));
-          if (initialActive) {
-            activateTab(initialActive);
-          }
-        }
-      }
-    }
+    initializeApp();
   });
 })();
 
