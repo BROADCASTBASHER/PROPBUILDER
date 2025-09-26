@@ -570,6 +570,27 @@ function buildEmailHTML() {
   const heroSubtitle = getText('pvSub');
   const summary = getText('pvSummary');
   const term = getText('pvTerm2') || getText('exportTerm');
+  const monthlyRaw = getText('pvMonthly');
+  const monthlyDetails = (() => {
+    if (!monthlyRaw) {
+      return { amount: '', gst: '' };
+    }
+    const compact = monthlyRaw.replace(/\s+/g, ' ').trim();
+    if (!compact) {
+      return { amount: '', gst: '' };
+    }
+    const gstMatch = compact.match(/\b(inc|ex)\s+gst\b/i);
+    if (!gstMatch) {
+      return { amount: compact, gst: '' };
+    }
+    const gstMode = gstMatch[1].toLowerCase() === 'inc' ? 'inc GST' : 'ex GST';
+    const amount = compact
+      .replace(gstMatch[0], '')
+      .replace(/\(\s*\)/g, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    return { amount, gst: gstMode };
+  })();
   const benefitsNode = document.getElementById('pvBenefits');
   const benefitsList = benefitsNode && typeof benefitsNode.innerHTML === 'string' ? benefitsNode.innerHTML.trim() : '';
   const assumptions = Array.from(document.querySelectorAll('#assumptions li'))
@@ -679,8 +700,18 @@ function buildEmailHTML() {
     out.push('<section class="card pricing">');
     out.push('<div class="card-header"><h2>Inclusions &amp; pricing breakdown</h2></div>');
     out.push('<div class="card-body">');
-    if (term) {
-      out.push(`<p style="margin:0 0 12px;font-weight:600;">Term: ${escapeHTML(term)}</p>`);
+    if (term || monthlyDetails.amount) {
+      out.push('<div style="margin:0 0 12px;display:flex;flex-wrap:wrap;gap:12px;">');
+      if (term) {
+        out.push(`<p style="margin:0;font-weight:600;">Term: ${escapeHTML(term)}</p>`);
+      }
+      if (monthlyDetails.amount) {
+        const gstSuffix = monthlyDetails.gst
+          ? ` <span style="font-weight:400;color:#5B6573;">(${escapeHTML(monthlyDetails.gst)})</span>`
+          : '';
+        out.push(`<p style="margin:0;font-weight:600;">Monthly investment: ${escapeHTML(monthlyDetails.amount)}${gstSuffix}</p>`);
+      }
+      out.push('</div>');
     }
     out.push('<table class="pricing-table"><thead><tr><th>Inclusion</th><th>Qty</th><th>Unit</th><th>Total</th></tr></thead><tbody>');
     for (const row of priceRows) {
