@@ -215,6 +215,7 @@ const state = {
   banner: {
     text: DEFAULT_BANNER_TEXT,
     bold: true,
+    textSize: 1,
     layout: 'left',
     size: '1000x300',
     fit: 'contain',
@@ -772,6 +773,7 @@ function initializeApp() {
 
   const bannerTextInput = doc.getElementById('bannerTxt');
   const bannerBoldInput = doc.getElementById('bnBold');
+  const bannerTextSizeInput = doc.getElementById('bnTextSize');
   const bannerLayoutSelect = doc.getElementById('bannerLayout');
   const presetSelect = doc.getElementById('preset');
   const bannerSizeSelect = doc.getElementById('bannerSize');
@@ -854,6 +856,7 @@ function initializeApp() {
   state.preset = presetSelect ? (presetSelect.value || state.preset) : state.preset;
   state.banner.text = bannerTextInput ? (bannerTextInput.value || DEFAULT_BANNER_TEXT) : DEFAULT_BANNER_TEXT;
   state.banner.bold = bannerBoldInput ? Boolean(bannerBoldInput.checked) : state.banner.bold;
+  state.banner.textSize = bannerTextSizeInput ? (Number(bannerTextSizeInput.value) || 1) : state.banner.textSize;
   state.banner.layout = bannerLayoutSelect ? (bannerLayoutSelect.value || state.banner.layout) : state.banner.layout;
   state.banner.size = bannerSizeSelect ? (bannerSizeSelect.value || state.banner.size) : state.banner.size;
   state.banner.logoMode = bannerLogoSelect ? (bannerLogoSelect.value || state.banner.logoMode) : state.banner.logoMode;
@@ -1179,6 +1182,7 @@ function initializeApp() {
 
     let fontSize = Math.max(26, Math.round(height * 0.2));
     const minFontSize = Math.max(20, Math.round(fontSize * 0.7));
+    const textScale = Number.isFinite(state.banner.textSize) && state.banner.textSize > 0 ? state.banner.textSize : 1;
     const measureFits = (size) => {
       bannerCtx.font = `${weight} ${size}px TelstraText, Arial, sans-serif`;
       const words = String(state.banner.text || "").split(/\s+/).filter(Boolean);
@@ -1205,6 +1209,19 @@ function initializeApp() {
     while (fontSize > minFontSize && !measureFits(fontSize)) {
       fontSize -= 1;
     }
+
+    let scaledFontSize = Math.max(12, Math.round(fontSize * textScale));
+    if (scaledFontSize > fontSize) {
+      while (scaledFontSize > fontSize && !measureFits(scaledFontSize)) {
+        scaledFontSize -= 1;
+      }
+    }
+    if (!measureFits(scaledFontSize)) {
+      while (scaledFontSize > minFontSize && !measureFits(scaledFontSize)) {
+        scaledFontSize -= 1;
+      }
+    }
+    fontSize = Math.max(minFontSize, scaledFontSize);
 
     bannerCtx.font = `${weight} ${fontSize}px TelstraText, Arial, sans-serif`;
     bannerCtx.fillStyle = preset.headline;
@@ -1756,6 +1773,13 @@ function initializeApp() {
   if (bannerBoldInput) {
     bannerBoldInput.addEventListener('change', (event) => {
       state.banner.bold = Boolean(event.target.checked);
+      drawBanner();
+    });
+  }
+  if (bannerTextSizeInput) {
+    bannerTextSizeInput.addEventListener('input', (event) => {
+      const value = Number(event.target.value);
+      state.banner.textSize = Number.isFinite(value) && value > 0 ? value : 1;
       drawBanner();
     });
   }
