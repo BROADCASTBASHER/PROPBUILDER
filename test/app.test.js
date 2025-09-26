@@ -465,7 +465,7 @@ test('buildEmailHTML composes full export with escaped content and live data', (
       pvSummary: createElement({ textContent: 'Fast rollout <guaranteed> & scalable.' }),
       pvBenefits: createElement({ innerHTML: '<li>Rapid deployment</li><li>99.99% uptime</li>' }),
       pvTotal: createElement({ textContent: '$12,345.60 ex GST' }),
-      pvMonthly: createElement({ textContent: '$789.00 per month' }),
+      pvMonthly: createElement({ textContent: '$789.00 ex GST' }),
       page2: createElement({ style: { display: 'block' } }),
       priceTableView: createElement({
         querySelectorAll(selector) {
@@ -509,6 +509,8 @@ test('buildEmailHTML composes full export with escaped content and live data', (
   assert.ok(html.includes('Payment due &amp; accepted &lt;net30&gt;'));
   assert.ok(html.includes('$1,800.00'));
   assert.ok(html.includes('Term: 24 months'));
+  assert.ok(html.includes('Monthly investment: $789.00'));
+  assert.ok(html.includes('(ex GST)'));
   assert.ok(html.includes('background:#223344'));
   assert.ok(!html.includes('undefined'));
 });

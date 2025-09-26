@@ -159,13 +159,19 @@ const FEATURE_LIBRARY = [
   {
     t: 'Cisco 9861 IP handsets',
     c: 'Colour display, HD audio and multi-line support give staff an intuitive desk experience.',
-    icon: 'pictoDeal104.png',
+    icon: 'pictoCiscoHandset104.png',
     size: 72
+  },
+  {
+    t: 'Meraki MX67 cloud security & Wi-Fi',
+    c: 'Cloud-managed security appliance with integrated Wi-Fi delivers SD-WAN, threat management and easy dashboard control.',
+    icon: 'pictoMerakiCloud104.png',
+    size: 68
   },
   {
     t: 'Webex collaboration across devices',
     c: 'Persistent messaging, meetings and calling keep your team connected anywhere on any device.',
-    icon: 'pictoTrackOrder104.png',
+    icon: 'pictoWebexCollab104.png',
     size: 68
   },
   {
@@ -570,6 +576,27 @@ function buildEmailHTML() {
   const heroSubtitle = getText('pvSub');
   const summary = getText('pvSummary');
   const term = getText('pvTerm2') || getText('exportTerm');
+  const monthlyRaw = getText('pvMonthly');
+  const monthlyDetails = (() => {
+    if (!monthlyRaw) {
+      return { amount: '', gst: '' };
+    }
+    const compact = monthlyRaw.replace(/\s+/g, ' ').trim();
+    if (!compact) {
+      return { amount: '', gst: '' };
+    }
+    const gstMatch = compact.match(/\b(inc|ex)\s+gst\b/i);
+    if (!gstMatch) {
+      return { amount: compact, gst: '' };
+    }
+    const gstMode = gstMatch[1].toLowerCase() === 'inc' ? 'inc GST' : 'ex GST';
+    const amount = compact
+      .replace(gstMatch[0], '')
+      .replace(/\(\s*\)/g, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    return { amount, gst: gstMode };
+  })();
   const benefitsNode = document.getElementById('pvBenefits');
   const benefitsList = benefitsNode && typeof benefitsNode.innerHTML === 'string' ? benefitsNode.innerHTML.trim() : '';
   const assumptions = Array.from(document.querySelectorAll('#assumptions li'))
@@ -593,9 +620,6 @@ function buildEmailHTML() {
   out.push('.card h2{margin:0;font-size:22px;}');
   out.push('.card h3{margin:0 0 12px;font-size:18px;}');
   out.push('.pill{display:inline-flex;align-items:center;padding:8px 16px;border-radius:999px;font-weight:700;background:' + panelColor + ';color:#fff;}');
-  out.push('.feature-grid,.hero-grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));}');
-  out.push('.feature-card{border:1px solid #E5E6EA;border-radius:16px;padding:16px;background:#FAF7F3;}');
-  out.push('.feature-card img{width:100%;height:auto;border-radius:12px;margin-bottom:12px;display:block;}');
   out.push('.pricing-table{width:100%;border-collapse:collapse;font-size:14px;}');
   out.push('.pricing-table th,.pricing-table td{border-top:1px solid #E5E6EA;padding:12px;text-align:left;vertical-align:top;}');
   out.push('.pricing-table thead th{background:#EEF2FF;font-weight:700;}');
@@ -638,40 +662,57 @@ function buildEmailHTML() {
   if (features.length) {
     out.push('<section class="card features">');
     out.push('<div class="card-header"><h2>Features &amp; benefits</h2><p style="margin:8px 0 0;color:#5B6573;">Key Features Included</p></div>');
-    out.push('<div class="card-body feature-grid">');
+    out.push('<div class="card-body">');
+    out.push('<table role="presentation" width="100%" style="width:100%;border-collapse:collapse;">');
     for (const feature of features) {
-      out.push('<div class="feature-card">');
+      out.push('<tr>');
+      out.push('<td style="padding:0 0 16px;vertical-align:top;">');
+      out.push('<table role="presentation" width="100%" style="width:100%;border-collapse:collapse;background:#FAF7F3;border:1px solid #E5E6EA;">');
+      out.push('<tr><td style="padding:16px;vertical-align:top;">');
       if (feature.image) {
-        out.push(`<img src="${escapeHTML(feature.image)}" alt="${escapeHTML(feature.title || 'Feature')}" style="max-height:${feature.height}px;object-fit:contain;">`);
+        out.push(`<img src="${escapeHTML(feature.image)}" alt="${escapeHTML(feature.title || 'Feature')}" style="display:block;width:100%;height:auto;max-height:${feature.height}px;margin:0 0 12px;">`);
       }
       if (feature.title) {
-        out.push(`<h3>${escapeHTML(feature.title)}</h3>`);
+        out.push(`<p style="margin:0 0 8px;font-size:16px;line-height:1.4;font-weight:600;color:#0B1220;">${escapeHTML(feature.title)}</p>`);
       }
       if (feature.copy) {
-        out.push(`<p style="margin:0;font-size:15px;line-height:1.5;">${escapeHTML(feature.copy)}</p>`);
+        out.push(`<p style="margin:0;font-size:15px;line-height:1.5;color:#2C3440;">${escapeHTML(feature.copy)}</p>`);
       }
-      out.push('</div>');
+      out.push('</td></tr></table>');
+      out.push('</td></tr>');
     }
+    out.push('</table>');
     out.push('</div></section>');
   }
 
   if (heroCards.length) {
     out.push('<section class="card hero-cards">');
+ codex/update-hero-section-heading-in-buildemailhtml
     out.push('<div class="card-header"><h2>Key features</h2></div>');
     out.push('<div class="card-body hero-grid">');
+
+    out.push('<div class="card-header"><h2>Hero success stories</h2></div>');
+    out.push('<div class="card-body">');
+    out.push('<table role="presentation" width="100%" style="width:100%;border-collapse:collapse;">');
+ main
     for (const card of heroCards) {
-      out.push('<div class="feature-card">');
+      out.push('<tr>');
+      out.push('<td style="padding:0 0 16px;vertical-align:top;">');
+      out.push('<table role="presentation" width="100%" style="width:100%;border-collapse:collapse;background:#FAF7F3;border:1px solid #E5E6EA;">');
+      out.push('<tr><td style="padding:16px;vertical-align:top;">');
       if (card.image) {
-        out.push(`<img src="${escapeHTML(card.image)}" alt="${escapeHTML(card.title || 'Hero card')}" style="max-height:${card.height}px;object-fit:contain;">`);
+        out.push(`<img src="${escapeHTML(card.image)}" alt="${escapeHTML(card.title || 'Hero card')}" style="display:block;width:100%;height:auto;max-height:${card.height}px;margin:0 0 12px;">`);
       }
       if (card.title) {
-        out.push(`<h3>${escapeHTML(card.title)}</h3>`);
+        out.push(`<p style="margin:0 0 8px;font-size:16px;line-height:1.4;font-weight:600;color:#0B1220;">${escapeHTML(card.title)}</p>`);
       }
       if (card.copy) {
-        out.push(`<p style="margin:0;font-size:15px;line-height:1.5;">${escapeHTML(card.copy)}</p>`);
+        out.push(`<p style="margin:0;font-size:15px;line-height:1.5;color:#2C3440;">${escapeHTML(card.copy)}</p>`);
       }
-      out.push('</div>');
+      out.push('</td></tr></table>');
+      out.push('</td></tr>');
     }
+    out.push('</table>');
     out.push('</div></section>');
   }
 
@@ -679,8 +720,18 @@ function buildEmailHTML() {
     out.push('<section class="card pricing">');
     out.push('<div class="card-header"><h2>Inclusions &amp; pricing breakdown</h2></div>');
     out.push('<div class="card-body">');
-    if (term) {
-      out.push(`<p style="margin:0 0 12px;font-weight:600;">Term: ${escapeHTML(term)}</p>`);
+    if (term || monthlyDetails.amount) {
+      out.push('<div style="margin:0 0 12px;display:flex;flex-wrap:wrap;gap:12px;">');
+      if (term) {
+        out.push(`<p style="margin:0;font-weight:600;">Term: ${escapeHTML(term)}</p>`);
+      }
+      if (monthlyDetails.amount) {
+        const gstSuffix = monthlyDetails.gst
+          ? ` <span style="font-weight:400;color:#5B6573;">(${escapeHTML(monthlyDetails.gst)})</span>`
+          : '';
+        out.push(`<p style="margin:0;font-weight:600;">Monthly investment: ${escapeHTML(monthlyDetails.amount)}${gstSuffix}</p>`);
+      }
+      out.push('</div>');
     }
     out.push('<table class="pricing-table"><thead><tr><th>Inclusion</th><th>Qty</th><th>Unit</th><th>Total</th></tr></thead><tbody>');
     for (const row of priceRows) {
