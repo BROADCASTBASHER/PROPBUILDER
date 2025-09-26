@@ -23,7 +23,8 @@ Open `index.html` in a browser.
 ## Assets
 - Product images placed in `assets/images/` (Cisco 9861, MX67W, Webex included).
 - If present, Telstra font files from your upload are placed in `assets/fonts/` and are used in the app and inlined into the email export.
-- Pictograms and logos are extracted to `assets/pictograms/` and `assets/logos/` for future use.
+- Logos load from `assets/logos/` when provided.
+- Bundled pictograms ship as inline data URIs in `js/assets.js`, so no binary icon files are committed.
 
 ## Notes
 - Email clients vary in web‑font support. The exporter embeds fonts as data URLs to maximise support without external requests.
