@@ -895,6 +895,119 @@ function initializeApp() {
     return formatted;
   };
 
+  const renderPriceTables = () => {
+    const priceModeLabel = state.pricing.gst === "inc" ? "Price (inc GST)" : "Price (ex GST)";
+    if (thPrice) {
+      thPrice.textContent = priceModeLabel;
+    }
+    if (thPriceGhost) {
+      thPriceGhost.textContent = priceModeLabel;
+    }
+    if (thPriceView) {
+      thPriceView.textContent = priceModeLabel;
+    }
+
+    const rows = state.pricing.items.map((item) => {
+      const label = esc(String(item.label || '').trim());
+      const unit = esc(String(item.unit || '').trim());
+      const qtyValue = Number.isFinite(Number(item.qty)) ? Number(item.qty) : 0;
+      const qtyText = qtyValue ? esc(String(qtyValue)) : '';
+      const priceValue = Number.isFinite(Number(item.price)) ? Number(item.price) : 0;
+      const baseTotal = qtyValue > 0 ? priceValue * qtyValue : priceValue;
+      const displayTotal = state.pricing.gst === "inc" ? baseTotal * 1.1 : baseTotal;
+      const priceText = baseTotal > 0 ? toCurrency(displayTotal) : (priceValue > 0 ? toCurrency(displayTotal) : '');
+
+      return `<tr><td>${label || '&nbsp;'}</td><td>${qtyText || '&nbsp;'}</td><td>${unit || '&nbsp;'}</td><td>${priceText ? esc(priceText) : '&nbsp;'}</td></tr>`;
+    });
+
+    const fallbackRow = '<tr><td colspan="4" class="note">Add line items to populate pricing.</td></tr>';
+    const html = rows.length ? rows.join('') : fallbackRow;
+
+    if (priceTableEdit) {
+      priceTableEdit.innerHTML = html;
+    }
+    if (priceTablePreview) {
+      priceTablePreview.innerHTML = html;
+    }
+    if (priceTableGhost) {
+      priceTableGhost.innerHTML = html;
+    }
+  };
+
+  const renderItems = () => {
+    if (!itemsContainer) {
+      return;
+    }
+    itemsContainer.innerHTML = '';
+    state.pricing.items.forEach((item, index) => {
+      const row = doc.createElement('div');
+      row.className = 'item-row';
+      row.style.display = 'grid';
+      row.style.gridTemplateColumns = 'minmax(0, 1fr) 80px 100px 140px auto';
+      row.style.gap = '8px';
+      row.style.alignItems = 'center';
+
+      const labelInput = doc.createElement('input');
+      labelInput.type = 'text';
+      labelInput.value = item.label || '';
+      labelInput.placeholder = 'Item description';
+      labelInput.addEventListener('input', (event) => {
+        item.label = event.target.value;
+        renderPriceTables();
+      });
+
+      const qtyInput = doc.createElement('input');
+      qtyInput.type = 'number';
+      qtyInput.min = '0';
+      qtyInput.step = '1';
+      qtyInput.value = Number.isFinite(Number(item.qty)) ? String(Number(item.qty)) : '';
+      qtyInput.placeholder = 'Qty';
+      qtyInput.addEventListener('input', (event) => {
+        const next = Number(event.target.value);
+        item.qty = Number.isFinite(next) ? next : 0;
+        renderPriceTables();
+      });
+
+      const unitInput = doc.createElement('input');
+      unitInput.type = 'text';
+      unitInput.value = item.unit || '';
+      unitInput.placeholder = 'Unit';
+      unitInput.addEventListener('input', (event) => {
+        item.unit = event.target.value;
+        renderPriceTables();
+      });
+
+      const priceInput = doc.createElement('input');
+      priceInput.type = 'number';
+      priceInput.min = '0';
+      priceInput.step = '0.01';
+      priceInput.value = Number.isFinite(Number(item.price)) ? String(Number(item.price)) : '';
+      priceInput.placeholder = 'Price (ex GST)';
+      priceInput.addEventListener('input', (event) => {
+        const next = Number(event.target.value);
+        item.price = Number.isFinite(next) ? next : 0;
+        renderPriceTables();
+      });
+
+      const removeBtn = doc.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'btn';
+      removeBtn.textContent = 'Remove';
+      removeBtn.addEventListener('click', () => {
+        state.pricing.items.splice(index, 1);
+        renderItems();
+        renderPriceTables();
+      });
+
+      row.appendChild(labelInput);
+      row.appendChild(qtyInput);
+      row.appendChild(unitInput);
+      row.appendChild(priceInput);
+      row.appendChild(removeBtn);
+      itemsContainer.appendChild(row);
+    });
+  };
+
   const pushBannerToPreview = () => {
     if (!bannerCanvas || typeof bannerCanvas.toDataURL !== "function") {
       return;
