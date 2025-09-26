@@ -648,9 +648,10 @@ function buildEmailHTML() {
   const heroHighlights = readHeroCards().map((card) => Object.assign({}, card, { hero: true }));
   const featureCards = readFeatures();
   const allFeatures = heroHighlights.concat(featureCards);
+  const visibleFeatures = allFeatures.filter((feature) => !feature.hero);
   const priceRows = readPriceRows();
   const featuresHeader = readFeaturesHeader();
-  const hasHeroFeature = allFeatures.some((feature) => feature.hero);
+  const hasHeroFeature = false;
   const pillTextColor = resolvePillTextColor(panelColor);
 
   const renderFeatureCopy = (text) => {
@@ -729,7 +730,7 @@ function buildEmailHTML() {
 
   const hasSummary = Boolean(summary);
   const hasBenefits = Boolean(benefitsList);
-  const hasFeatures = allFeatures.length > 0;
+  const hasFeatures = visibleFeatures.length > 0;
   const hasPricingSummary = Boolean(term) || Boolean(monthlyDetails.amount);
   const hasAssumptions = assumptions.length > 0;
 
@@ -809,7 +810,7 @@ function buildEmailHTML() {
     if (legendText) {
       out.push(legendText);
     }
-    out.push(`<div style="margin-top:20px;">${renderFeatureGrid(allFeatures)}</div>`);
+    out.push(`<div style="margin-top:20px;">${renderFeatureGrid(visibleFeatures)}</div>`);
     out.push('</div>');
   }
 
@@ -1388,9 +1389,14 @@ function initializeApp() {
       if (!hasDetails && !iconSrc) {
         continue;
       }
+      const isHeroFeature = Boolean(feature.hero);
+      if (isHeroFeature) {
+        heroCount += 1;
+        continue;
+      }
       hasContent = true;
       const card = doc.createElement('div');
-      card.className = `feature${feature.hero ? " hero" : ""}`;
+      card.className = "feature";
 
       const iconWrap = doc.createElement('div');
       iconWrap.className = "icon";
@@ -1407,15 +1413,6 @@ function initializeApp() {
       body.style.flexDirection = "column";
       body.style.gap = "4px";
       body.style.minWidth = "0";
-
-      if (feature.hero) {
-        heroCount += 1;
-        const badge = doc.createElement('span');
-        badge.className = "badge hero-badge";
-        badge.textContent = "HERO FEATURE";
-        badge.style.alignSelf = "flex-start";
-        body.appendChild(badge);
-      }
 
       if (titleText) {
         const title = doc.createElement('div');
