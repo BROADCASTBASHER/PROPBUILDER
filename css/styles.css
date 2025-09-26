@@ -294,6 +294,10 @@ body.wide .pages{border-radius:18px}
 .features-preview-header .legend{font-size:13px;color:#5B6573;}
 .feature-list{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));}
 .feature-list .feature.hero{grid-column:1 / -1;}
-.features-preview.has-hero .features-preview-header .legend{display:block;}
 .features-preview .features-preview-header .legend{display:none;}
+body.editing .features-preview.has-hero .features-preview-header .legend{display:block;}
+body.previewing .features-preview-header .legend{display:none!important;}
+@media print{.features-preview-header .legend{display:none!important;}}
+body.previewing .feature-list .feature.hero,#tab-preview .feature-list .feature.hero{display:none!important;}
+@media print{.feature-list .feature.hero{display:none!important;}}
 .feature .hero-badge{background:#FFF0E5;border:1px solid #FFC8AE;color:#B54E20;}
