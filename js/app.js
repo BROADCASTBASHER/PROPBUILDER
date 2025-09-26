@@ -687,9 +687,14 @@ function buildEmailHTML() {
 
   if (heroCards.length) {
     out.push('<section class="card hero-cards">');
+ codex/update-hero-section-heading-in-buildemailhtml
+    out.push('<div class="card-header"><h2>Key features</h2></div>');
+    out.push('<div class="card-body hero-grid">');
+
     out.push('<div class="card-header"><h2>Hero success stories</h2></div>');
     out.push('<div class="card-body">');
     out.push('<table role="presentation" width="100%" style="width:100%;border-collapse:collapse;">');
+ main
     for (const card of heroCards) {
       out.push('<tr>');
       out.push('<td style="padding:0 0 16px;vertical-align:top;">');
