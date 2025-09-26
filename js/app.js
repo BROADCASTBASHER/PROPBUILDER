@@ -750,6 +750,7 @@ function initializeApp() {
 
   const featureGrid = doc.getElementById('featureGrid');
   const featurePreview = doc.getElementById('featuresView');
+  const heroFeaturePreview = doc.getElementById('heroCallouts');
   const addFeatureBtn = doc.getElementById('btnAddFeat');
   const iconModal = doc.getElementById('iconModal');
   const iconGallery = doc.getElementById('iconGallery');
@@ -1158,50 +1159,77 @@ function initializeApp() {
   };
 
   const renderFeaturePreview = () => {
-    if (!featurePreview) {
+    if (!featurePreview && !heroFeaturePreview) {
       return;
     }
-    featurePreview.innerHTML = "";
+    const standardFeatures = [];
+    const heroFeatures = [];
     for (const feature of state.features) {
-      const card = doc.createElement('div');
-      card.className = `feature${feature.hero ? " hero" : ""}`;
-
-      const iconWrap = doc.createElement('div');
-      iconWrap.className = "icon";
-      const size = Number(feature.size) || 56;
-      iconWrap.style.width = `${size}px`;
-      iconWrap.style.height = `${size}px`;
-      const img = doc.createElement('img');
-      img.src = feature.img || resolveIcon(feature.icon);
-      iconWrap.appendChild(img);
-      card.appendChild(iconWrap);
-
-      const body = doc.createElement('div');
-      body.style.minWidth = "0";
-      if (feature.t) {
-        const title = doc.createElement('div');
-        title.style.fontWeight = "700";
-        title.style.fontSize = "18px";
-        title.style.marginBottom = "4px";
-        title.textContent = feature.t;
-        body.appendChild(title);
+      if (feature.hero) {
+        heroFeatures.push(feature);
+      } else {
+        standardFeatures.push(feature);
       }
-      if (feature.c) {
-        if (feature.c.includes('\n')) {
-          const list = doc.createElement('ul');
-          list.innerHTML = bulletify(feature.c);
-          body.appendChild(list);
-        } else {
-          const copy = doc.createElement('div');
-          copy.className = "note";
-          copy.style.fontSize = "16px";
-          copy.textContent = feature.c;
-          body.appendChild(copy);
-        }
-      }
-      card.appendChild(body);
-      featurePreview.appendChild(card);
     }
+
+    const renderFeatureCards = (container, items) => {
+      if (!container) {
+        return;
+      }
+      container.innerHTML = "";
+      if (!items.length) {
+        if (container === heroFeaturePreview) {
+          container.style.display = "none";
+        }
+        return;
+      }
+      if (container === heroFeaturePreview) {
+        container.style.display = "";
+      }
+      for (const feature of items) {
+        const card = doc.createElement('div');
+        card.className = `feature${feature.hero ? " hero" : ""}`;
+
+        const iconWrap = doc.createElement('div');
+        iconWrap.className = "icon";
+        const size = Number(feature.size) || 56;
+        iconWrap.style.width = `${size}px`;
+        iconWrap.style.height = `${size}px`;
+        const img = doc.createElement('img');
+        img.src = feature.img || resolveIcon(feature.icon);
+        iconWrap.appendChild(img);
+        card.appendChild(iconWrap);
+
+        const body = doc.createElement('div');
+        body.style.minWidth = "0";
+        if (feature.t) {
+          const title = doc.createElement('div');
+          title.style.fontWeight = "700";
+          title.style.fontSize = "18px";
+          title.style.marginBottom = "4px";
+          title.textContent = feature.t;
+          body.appendChild(title);
+        }
+        if (feature.c) {
+          if (feature.c.includes('\n')) {
+            const list = doc.createElement('ul');
+            list.innerHTML = bulletify(feature.c);
+            body.appendChild(list);
+          } else {
+            const copy = doc.createElement('div');
+            copy.className = "note";
+            copy.style.fontSize = "16px";
+            copy.textContent = feature.c;
+            body.appendChild(copy);
+          }
+        }
+        card.appendChild(body);
+        container.appendChild(card);
+      }
+    };
+
+    renderFeatureCards(featurePreview, standardFeatures);
+    renderFeatureCards(heroFeaturePreview, heroFeatures);
   };
 
   let currentFeatureIndex = -1;

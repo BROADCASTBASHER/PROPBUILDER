@@ -258,6 +258,23 @@ body.wide .pages{border-radius:18px}
 
 #tab-preview .feature .icon, #page1 .feature .icon, #page2 .feature .icon { background: transparent !important; box-shadow:none !important; }
 #tab-preview .feature, #page1 .feature, #page2 .feature { margin:8px 0 !important; }
+#page2 .hero-callouts {
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+  gap:16px;
+  margin:0 0 20px;
+}
+#page2 .hero-callouts:empty {
+  display:none;
+}
+#page2 .hero-callouts .feature {
+  margin:0 !important;
+  break-inside:avoid;
+  page-break-inside:avoid;
+}
+#page2 .hero-callouts .feature.hero {
+  grid-column:1 / -1;
+}
 #page2 #heroAbovePricing { margin:8px 0 12px !important; }
 #page2 #heroAbovePricing .ttl { font-weight:700; }
 
