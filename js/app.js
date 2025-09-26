@@ -161,20 +161,20 @@ const FEATURE_LIBRARY = [
   {
     t: 'Cisco 9861 IP handsets',
     c: 'Colour display, HD audio and multi-line support give staff an intuitive desk experience.',
-    icon: 'pictoCiscoHandset104.png',
-    size: 72
+    icon: 'CISCO 9861.jpg',
+    size: 96
   },
   {
     t: 'Meraki MX67 cloud security & Wi-Fi',
     c: 'Cloud-managed security appliance with integrated Wi-Fi delivers SD-WAN, threat management and easy dashboard control.',
-    icon: 'pictoMerakiCloud104.png',
-    size: 68
+    icon: 'MX67.jpg',
+    size: 96
   },
   {
     t: 'Webex collaboration across devices',
     c: 'Persistent messaging, meetings and calling keep your team connected anywhere on any device.',
-    icon: 'pictoWebexCollab104.png',
-    size: 68
+    icon: 'Webex.jpg',
+    size: 96
   },
   {
     t: 'Managed install & training',
@@ -803,10 +803,7 @@ function initializeApp() {
 
   const featureGrid = doc.getElementById('featureGrid');
   const featuresPreviewLayout = doc.getElementById('featuresPreview');
-  const standardFeaturesColumn = doc.getElementById('standardFeaturesColumn');
-  const heroFeaturesColumn = doc.getElementById('heroFeaturesColumn');
   const featurePreview = doc.getElementById('featuresView');
-  const heroFeaturePreview = doc.getElementById('heroCallouts');
   const addFeatureBtn = doc.getElementById('btnAddFeat');
   const iconModal = doc.getElementById('iconModal');
   const iconGallery = doc.getElementById('iconGallery');
@@ -1264,92 +1261,86 @@ function initializeApp() {
   };
 
   const renderFeaturePreview = () => {
-    if (!featurePreview && !heroFeaturePreview) {
+    if (!featurePreview) {
       return;
     }
-    if (featuresPreviewLayout) {
-      featuresPreviewLayout.classList.remove('two-cols');
-    }
-    const standardFeatures = [];
-    const heroFeatures = [];
+    featurePreview.innerHTML = "";
+    let heroCount = 0;
+    let hasContent = false;
     for (const feature of state.features) {
-      if (feature.hero) {
-        heroFeatures.push(feature);
-      } else {
-        standardFeatures.push(feature);
+      if (!feature) {
+        continue;
       }
+      const titleText = feature.t ? String(feature.t).trim() : "";
+      const copyText = feature.c ? String(feature.c).trim() : "";
+      const hasDetails = titleText || copyText;
+      const iconSrc = feature.img || resolveIcon(feature.icon);
+      if (!hasDetails && !iconSrc) {
+        continue;
+      }
+      hasContent = true;
+      const card = doc.createElement('div');
+      card.className = `feature${feature.hero ? " hero" : ""}`;
+
+      const iconWrap = doc.createElement('div');
+      iconWrap.className = "icon";
+      const size = Number(feature.size) || 56;
+      iconWrap.style.width = `${size}px`;
+      iconWrap.style.height = `${size}px`;
+      const img = doc.createElement('img');
+      img.src = iconSrc;
+      iconWrap.appendChild(img);
+      card.appendChild(iconWrap);
+
+      const body = doc.createElement('div');
+      body.style.display = "flex";
+      body.style.flexDirection = "column";
+      body.style.gap = "4px";
+      body.style.minWidth = "0";
+
+      if (feature.hero) {
+        heroCount += 1;
+        const badge = doc.createElement('span');
+        badge.className = "badge hero-badge";
+        badge.textContent = "HERO FEATURE";
+        badge.style.alignSelf = "flex-start";
+        body.appendChild(badge);
+      }
+
+      if (titleText) {
+        const title = doc.createElement('div');
+        title.style.fontWeight = "700";
+        title.style.fontSize = "18px";
+        title.style.marginBottom = "2px";
+        title.textContent = titleText;
+        body.appendChild(title);
+      }
+      if (copyText) {
+        if (copyText.includes('\n')) {
+          const list = doc.createElement('ul');
+          list.innerHTML = bulletify(copyText);
+          body.appendChild(list);
+        } else {
+          const copy = doc.createElement('div');
+          copy.className = "note";
+          copy.style.fontSize = "16px";
+          copy.textContent = copyText;
+          body.appendChild(copy);
+        }
+      }
+
+      card.appendChild(body);
+      featurePreview.appendChild(card);
     }
 
-    const renderFeatureCards = (container, items) => {
-      if (!container) {
-        return;
-      }
-      const column = container === featurePreview ? standardFeaturesColumn : container === heroFeaturePreview ? heroFeaturesColumn : null;
-      container.innerHTML = "";
-      if (!items.length) {
-        if (column) {
-          column.style.display = "none";
-        } else if (container === heroFeaturePreview) {
-          container.style.display = "none";
-        }
-        return;
-      }
-      if (column) {
-        column.style.display = "";
-      } else if (container === heroFeaturePreview) {
-        container.style.display = "";
-      }
-      for (const feature of items) {
-        const card = doc.createElement('div');
-        card.className = `feature${feature.hero ? " hero" : ""}`;
-
-        const iconWrap = doc.createElement('div');
-        iconWrap.className = "icon";
-        const size = Number(feature.size) || 56;
-        iconWrap.style.width = `${size}px`;
-        iconWrap.style.height = `${size}px`;
-        const img = doc.createElement('img');
-        img.src = feature.img || resolveIcon(feature.icon);
-        iconWrap.appendChild(img);
-        card.appendChild(iconWrap);
-
-        const body = doc.createElement('div');
-        body.style.minWidth = "0";
-        if (feature.t) {
-          const title = doc.createElement('div');
-          title.style.fontWeight = "700";
-          title.style.fontSize = "18px";
-          title.style.marginBottom = "4px";
-          title.textContent = feature.t;
-          body.appendChild(title);
-        }
-        if (feature.c) {
-          if (feature.c.includes('\n')) {
-            const list = doc.createElement('ul');
-            list.innerHTML = bulletify(feature.c);
-            body.appendChild(list);
-          } else {
-            const copy = doc.createElement('div');
-            copy.className = "note";
-            copy.style.fontSize = "16px";
-            copy.textContent = feature.c;
-            body.appendChild(copy);
-          }
-        }
-        card.appendChild(body);
-        container.appendChild(card);
-      }
-    };
-
-    renderFeatureCards(featurePreview, standardFeatures);
-    renderFeatureCards(heroFeaturePreview, heroFeatures);
     if (featuresPreviewLayout) {
-      if (standardFeatures.length && heroFeatures.length) {
-        featuresPreviewLayout.classList.add('two-cols');
+      if (hasContent) {
+        featuresPreviewLayout.style.display = "";
+        featuresPreviewLayout.classList.toggle('has-hero', heroCount > 0);
       } else {
-        featuresPreviewLayout.classList.remove('two-cols');
+        featuresPreviewLayout.style.display = "none";
+        featuresPreviewLayout.classList.remove('has-hero');
       }
-      featuresPreviewLayout.style.display = standardFeatures.length || heroFeatures.length ? "" : "none";
     }
   };
 
