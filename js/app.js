@@ -657,7 +657,7 @@ function buildEmailHTML() {
 
   if (heroCards.length) {
     out.push('<section class="card hero-cards">');
-    out.push('<div class="card-header"><h2>Hero success stories</h2></div>');
+    out.push('<div class="card-header"><h2>Key features</h2></div>');
     out.push('<div class="card-body hero-grid">');
     for (const card of heroCards) {
       out.push('<div class="feature-card">');
