@@ -808,13 +808,13 @@ function initializeApp() {
   state.banner.scale = bannerScale ? (Number(bannerScale.value) || 1) : state.banner.scale;
   state.banner.offsetX = bannerOffsetX ? (Number(bannerOffsetX.value) || 0) : state.banner.offsetX;
   state.banner.offsetY = bannerOffsetY ? (Number(bannerOffsetY.value) || 0) : state.banner.offsetY;
+  const fitRadio = doc.querySelector('input[name="fit"]:checked');
   state.banner.fit = fitRadio ? fitRadio.value : state.banner.fit;
 
   state.docType = docTypeSelect ? (docTypeSelect.value || DEFAULT_DOC_TYPE) : DEFAULT_DOC_TYPE;
   state.pricing.gst = gstModeSelect ? (gstModeSelect.value || DEFAULT_GST_MODE) : DEFAULT_GST_MODE;
   state.pricing.monthly = monthlyInput ? (Number(monthlyInput.value) || DEFAULT_MONTHLY) : DEFAULT_MONTHLY;
   state.pricing.term = termInput ? (Number(termInput.value) || DEFAULT_TERM) : DEFAULT_TERM;
-  const fitRadio = doc.querySelector('input[name="fit"]:checked');
 
   const resolveIcon = (name) => {
     if (name && iconMap[name]) {
