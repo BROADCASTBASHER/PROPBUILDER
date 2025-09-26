@@ -16,6 +16,18 @@ input[type=text],input[type=number],textarea,select{width:100%;padding:12px;bord
 .page{min-height:1160px;background:#fff}
 .banner-img{width:100%;height:320px;object-fit:cover;display:block}
 .fgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.features-preview{display:grid;gap:24px;grid-template-columns:minmax(0,1fr);align-items:start}
+@media (min-width:960px){
+  .features-preview.two-cols{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}
+}
+.features-column{display:flex;flex-direction:column;gap:16px}
+.features-column .column-header .title{font-size:20px;font-weight:800;color:#0B1220}
+.features-column .column-header .subtitle{font-size:14px;font-weight:600;letter-spacing:.04em;color:#5B6573}
+.feature-list{display:grid;grid-template-columns:1fr;gap:16px}
+.hero-callouts{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+.hero-callouts:empty{display:none}
+.hero-callouts .feature{margin:0 !important;break-inside:avoid;page-break-inside:avoid}
+.hero-callouts .feature.hero{grid-column:span 2}
 .feature{display:flex;gap:12px;border:1px solid var(--line);border-radius:14px;padding:12px;background:#fff;align-items:flex-start}
 .feature.hero{grid-column:1 / span 2;min-height:160px}
 .feature .icon{flex:0 0 auto;display:flex;align-items:center;justify-content:center;width:56px;height:56px}
@@ -258,23 +270,6 @@ body.wide .pages{border-radius:18px}
 
 #tab-preview .feature .icon, #page1 .feature .icon, #page2 .feature .icon { background: transparent !important; box-shadow:none !important; }
 #tab-preview .feature, #page1 .feature, #page2 .feature { margin:8px 0 !important; }
-#page2 .hero-callouts {
-  display:grid;
-  grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
-  gap:16px;
-  margin:0 0 20px;
-}
-#page2 .hero-callouts:empty {
-  display:none;
-}
-#page2 .hero-callouts .feature {
-  margin:0 !important;
-  break-inside:avoid;
-  page-break-inside:avoid;
-}
-#page2 .hero-callouts .feature.hero {
-  grid-column:1 / -1;
-}
 #page2 #heroAbovePricing { margin:8px 0 12px !important; }
 #page2 #heroAbovePricing .ttl { font-weight:700; }
 
