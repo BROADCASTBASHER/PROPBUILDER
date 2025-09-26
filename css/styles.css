@@ -40,6 +40,11 @@ input[type=text],input[type=number],textarea,select{width:100%;padding:12px;bord
 .controls{display:grid;grid-template-columns:1fr 1fr;gap:10px}.chk{display:flex;gap:10px;align-items:center}
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;padding:20px;z-index:1000}
 .modal .panel{background:#fff;max-width:900px;width:100%;border-radius:16px;border:1px solid var(--line);padding:12px}
+.modal .modal-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+.modal .modal-head strong{font-size:18px;flex:1 1 180px}
+.modal .modal-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+#iconSearch{flex:1 1 220px;min-width:180px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;font-size:14px}
+#iconGalleryStatus{margin-top:8px}
 .modal .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:6px}
 .toast{position:fixed;right:16px;bottom:16px;background:#122B5C;color:#fff;padding:10px 12px;border-radius:10px;display:none;z-index:2000}
 #tab-start .card{display:flex;flex-direction:column}
