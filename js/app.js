@@ -593,9 +593,6 @@ function buildEmailHTML() {
   out.push('.card h2{margin:0;font-size:22px;}');
   out.push('.card h3{margin:0 0 12px;font-size:18px;}');
   out.push('.pill{display:inline-flex;align-items:center;padding:8px 16px;border-radius:999px;font-weight:700;background:' + panelColor + ';color:#fff;}');
-  out.push('.feature-grid,.hero-grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));}');
-  out.push('.feature-card{border:1px solid #E5E6EA;border-radius:16px;padding:16px;background:#FAF7F3;}');
-  out.push('.feature-card img{width:100%;height:auto;border-radius:12px;margin-bottom:12px;display:block;}');
   out.push('.pricing-table{width:100%;border-collapse:collapse;font-size:14px;}');
   out.push('.pricing-table th,.pricing-table td{border-top:1px solid #E5E6EA;padding:12px;text-align:left;vertical-align:top;}');
   out.push('.pricing-table thead th{background:#EEF2FF;font-weight:700;}');
@@ -638,40 +635,52 @@ function buildEmailHTML() {
   if (features.length) {
     out.push('<section class="card features">');
     out.push('<div class="card-header"><h2>Features &amp; benefits</h2><p style="margin:8px 0 0;color:#5B6573;">Key Features Included</p></div>');
-    out.push('<div class="card-body feature-grid">');
+    out.push('<div class="card-body">');
+    out.push('<table role="presentation" width="100%" style="width:100%;border-collapse:collapse;">');
     for (const feature of features) {
-      out.push('<div class="feature-card">');
+      out.push('<tr>');
+      out.push('<td style="padding:0 0 16px;vertical-align:top;">');
+      out.push('<table role="presentation" width="100%" style="width:100%;border-collapse:collapse;background:#FAF7F3;border:1px solid #E5E6EA;">');
+      out.push('<tr><td style="padding:16px;vertical-align:top;">');
       if (feature.image) {
-        out.push(`<img src="${escapeHTML(feature.image)}" alt="${escapeHTML(feature.title || 'Feature')}" style="max-height:${feature.height}px;object-fit:contain;">`);
+        out.push(`<img src="${escapeHTML(feature.image)}" alt="${escapeHTML(feature.title || 'Feature')}" style="display:block;width:100%;height:auto;max-height:${feature.height}px;margin:0 0 12px;">`);
       }
       if (feature.title) {
-        out.push(`<h3>${escapeHTML(feature.title)}</h3>`);
+        out.push(`<p style="margin:0 0 8px;font-size:16px;line-height:1.4;font-weight:600;color:#0B1220;">${escapeHTML(feature.title)}</p>`);
       }
       if (feature.copy) {
-        out.push(`<p style="margin:0;font-size:15px;line-height:1.5;">${escapeHTML(feature.copy)}</p>`);
+        out.push(`<p style="margin:0;font-size:15px;line-height:1.5;color:#2C3440;">${escapeHTML(feature.copy)}</p>`);
       }
-      out.push('</div>');
+      out.push('</td></tr></table>');
+      out.push('</td></tr>');
     }
+    out.push('</table>');
     out.push('</div></section>');
   }
 
   if (heroCards.length) {
     out.push('<section class="card hero-cards">');
     out.push('<div class="card-header"><h2>Hero success stories</h2></div>');
-    out.push('<div class="card-body hero-grid">');
+    out.push('<div class="card-body">');
+    out.push('<table role="presentation" width="100%" style="width:100%;border-collapse:collapse;">');
     for (const card of heroCards) {
-      out.push('<div class="feature-card">');
+      out.push('<tr>');
+      out.push('<td style="padding:0 0 16px;vertical-align:top;">');
+      out.push('<table role="presentation" width="100%" style="width:100%;border-collapse:collapse;background:#FAF7F3;border:1px solid #E5E6EA;">');
+      out.push('<tr><td style="padding:16px;vertical-align:top;">');
       if (card.image) {
-        out.push(`<img src="${escapeHTML(card.image)}" alt="${escapeHTML(card.title || 'Hero card')}" style="max-height:${card.height}px;object-fit:contain;">`);
+        out.push(`<img src="${escapeHTML(card.image)}" alt="${escapeHTML(card.title || 'Hero card')}" style="display:block;width:100%;height:auto;max-height:${card.height}px;margin:0 0 12px;">`);
       }
       if (card.title) {
-        out.push(`<h3>${escapeHTML(card.title)}</h3>`);
+        out.push(`<p style="margin:0 0 8px;font-size:16px;line-height:1.4;font-weight:600;color:#0B1220;">${escapeHTML(card.title)}</p>`);
       }
       if (card.copy) {
-        out.push(`<p style="margin:0;font-size:15px;line-height:1.5;">${escapeHTML(card.copy)}</p>`);
+        out.push(`<p style="margin:0;font-size:15px;line-height:1.5;color:#2C3440;">${escapeHTML(card.copy)}</p>`);
       }
-      out.push('</div>');
+      out.push('</td></tr></table>');
+      out.push('</td></tr>');
     }
+    out.push('</table>');
     out.push('</div></section>');
   }
 
