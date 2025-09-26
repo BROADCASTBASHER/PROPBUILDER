@@ -159,13 +159,19 @@ const FEATURE_LIBRARY = [
   {
     t: 'Cisco 9861 IP handsets',
     c: 'Colour display, HD audio and multi-line support give staff an intuitive desk experience.',
-    icon: 'pictoDeal104.png',
+    icon: 'pictoCiscoHandset104.png',
     size: 72
+  },
+  {
+    t: 'Meraki MX67 cloud security & Wi-Fi',
+    c: 'Cloud-managed security appliance with integrated Wi-Fi delivers SD-WAN, threat management and easy dashboard control.',
+    icon: 'pictoMerakiCloud104.png',
+    size: 68
   },
   {
     t: 'Webex collaboration across devices',
     c: 'Persistent messaging, meetings and calling keep your team connected anywhere on any device.',
-    icon: 'pictoTrackOrder104.png',
+    icon: 'pictoWebexCollab104.png',
     size: 68
   },
   {
