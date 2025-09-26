@@ -148,6 +148,8 @@ const LOGO_ALIASES = {
   'Primary on Coral (White T)': 'Primary on Coral (White T)'
 };
 
+const logoAspectCache = new Map();
+
 const FEATURE_LIBRARY = [
   {
     t: 'Cloud-based flexibility (TIPT)',
@@ -1139,10 +1141,39 @@ function initializeApp() {
     bannerCtx.fillRect(0, height - accentHeight, width, accentHeight);
 
     const textPadding = 24;
-    const textMaxWidth = isHeadlineOnly ? (width - (textPadding * 2)) : (width - panelWidth - (textPadding * 2));
-    const textX = state.banner.layout === "left" && !isHeadlineOnly
+    const logoPadding = Math.round(height * 0.08);
+    const maxLogoHeight = Math.round(height * 0.26);
+    let textMaxWidth = isHeadlineOnly ? (width - (textPadding * 2)) : (width - panelWidth - (textPadding * 2));
+    let textX = state.banner.layout === "left" && !isHeadlineOnly
       ? panelWidth + textPadding
       : textPadding;
+    let leftBound = textX;
+    let rightBound = textX + textMaxWidth;
+
+    const logoSrc = resolveLogo();
+    const hasRenderableLogo = Boolean(logoSrc && logoSrc !== TRANSPARENT_PNG);
+
+    if (hasRenderableLogo) {
+      const clearancePadding = Math.max(textPadding, logoPadding);
+      const storedRatio = logoAspectCache.get(logoSrc) || 1;
+      const estimatedLogoWidth = Math.round(maxLogoHeight * storedRatio);
+
+      if (isHeadlineOnly || state.banner.layout === "left") {
+        const maxTextEnd = width - (logoPadding + estimatedLogoWidth + clearancePadding);
+        rightBound = Math.min(rightBound, maxTextEnd);
+      }
+      if (!isHeadlineOnly && state.banner.layout === "right") {
+        const minTextStart = logoPadding + estimatedLogoWidth + clearancePadding;
+        leftBound = Math.max(leftBound, minTextStart);
+      }
+    }
+
+    if (rightBound < leftBound) {
+      rightBound = leftBound;
+    }
+
+    textX = leftBound;
+    textMaxWidth = Math.max(0, rightBound - leftBound);
     const textY = Math.round(height * (isHeadlineOnly ? 0.25 : 0.32));
     const maxLines = isHeadlineOnly ? 2 : 3;
     const weight = state.banner.bold ? "700" : "400";
@@ -1181,24 +1212,29 @@ function initializeApp() {
     bannerCtx.textBaseline = "top";
     wrapTextLines(bannerCtx, state.banner.text || "", textX, textY, textMaxWidth, Math.round(fontSize * 1.12), maxLines);
 
-    const logoSrc = resolveLogo();
-    if (logoSrc) {
+    if (hasRenderableLogo) {
       const logoImage = new Image();
       logoImage.onload = () => {
-        const padding = Math.round(height * 0.08);
-        const maxLogoHeight = Math.round(height * 0.26);
-        const ratio = logoImage.naturalWidth > 0 ? logoImage.naturalWidth / logoImage.naturalHeight : 1;
+        const ratio = (logoImage.naturalWidth > 0 && logoImage.naturalHeight > 0)
+          ? logoImage.naturalWidth / logoImage.naturalHeight
+          : 1;
+        const previousRatio = logoAspectCache.get(logoSrc);
+        logoAspectCache.set(logoSrc, ratio);
+        if (!previousRatio || Math.abs(previousRatio - ratio) > 0.001) {
+          drawBanner();
+          return;
+        }
         const logoHeight = maxLogoHeight;
         const logoWidth = Math.round(logoHeight * ratio);
         let logoX;
         if (isHeadlineOnly || state.banner.layout === "left") {
-          logoX = width - logoWidth - padding;
+          logoX = width - logoWidth - logoPadding;
         } else if (state.banner.layout === "right") {
-          logoX = padding;
+          logoX = logoPadding;
         } else {
-          logoX = width - logoWidth - padding;
+          logoX = width - logoWidth - logoPadding;
         }
-        const logoY = padding;
+        const logoY = logoPadding;
         bannerCtx.drawImage(logoImage, logoX, logoY, logoWidth, logoHeight);
         pushBannerToPreview();
       };
