@@ -187,9 +187,49 @@ async function inlineBackgroundImage(el, warnings) {
 
   let nextBg = inlineBg && inlineBg !== 'none' ? inlineBg : backgroundCandidates[0];
 
-  for (const url of urls) {
+  const getBaseHref = () => {
+    if (typeof document !== 'undefined' && document?.baseURI) {
+      return document.baseURI;
+    }
+    if (typeof location !== 'undefined' && location?.href) {
+      return location.href;
+    }
+    return 'http://localhost/';
+  };
+
+  const hasExplicitScheme = (value) => /^[a-zA-Z][\w+.-]*:/.test(value);
+
+  const resolveUrl = (value) => {
     try {
-      const { dataUri } = await fetchAsDataURL(url);
+      return new URL(value, getBaseHref());
+    } catch (error) {
+      return null;
+    }
+  };
+
+  for (const url of urls) {
+    const resolved = resolveUrl(url);
+    const fallbackTarget = resolved?.href || url;
+    const isOriginalRelative = !hasExplicitScheme(url) && !url.startsWith('//');
+    const protocol = resolved?.protocol || '';
+    const isHttp = protocol === 'http:' || protocol === 'https:';
+    const canAttemptFetch = !isOriginalRelative && isHttp;
+
+    try {
+      let dataUri = null;
+
+      if (canAttemptFetch) {
+        try {
+          ({ dataUri } = await fetchAsDataURL(resolved.href));
+        } catch (error) {
+          // fall through to canvas fallback
+        }
+      }
+
+      if (!dataUri) {
+        ({ dataUri } = await imageSrcToCanvasDataURI(fallbackTarget));
+      }
+
       nextBg = nextBg.split(url).join(dataUri);
     } catch (error) {
       warnings.push(`BG image inline failed: ${url} — ${error?.message || error}`);
@@ -676,6 +716,7 @@ if (typeof module !== 'undefined' && module.exports) {
       renderKeyBenefits,
       inlineAllRasterImages,
       imgElementToDataURI,
+      inlineBackgroundImage,
     },
   };
 }
