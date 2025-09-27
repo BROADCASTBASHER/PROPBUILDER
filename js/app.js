@@ -148,6 +148,14 @@ const LOGO_ALIASES = {
   'Primary on Coral (White T)': 'Primary on Coral (White T)'
 };
 
+const LOGO_DISPLAY_NAMES = {
+  'Primary (Blue/Coral)': 'Primary (Blue/Coral)',
+  'Primary (Mono Black)': 'Mono – Black',
+  'Primary (Mono White)': 'Mono – White',
+  'Primary on Blue (White T)': 'Primary on Blue (White T)',
+  'Primary on Coral (White T)': 'Primary on Coral (White T)'
+};
+
 const ICON_SIZE_MIN = 40;
 const ICON_SIZE_MAX = 160;
 const HERO_ICON_SIZE_MAX = 220;
@@ -1029,7 +1037,6 @@ function initializeApp() {
   state.banner.textSize = bannerTextSizeInput ? (Number(bannerTextSizeInput.value) || 1) : state.banner.textSize;
   state.banner.layout = bannerLayoutSelect ? (bannerLayoutSelect.value || state.banner.layout) : state.banner.layout;
   state.banner.size = bannerSizeSelect ? (bannerSizeSelect.value || state.banner.size) : state.banner.size;
-  state.banner.logoMode = bannerLogoSelect ? (bannerLogoSelect.value || state.banner.logoMode) : state.banner.logoMode;
   state.banner.scale = bannerScale ? (Number(bannerScale.value) || 1) : state.banner.scale;
   state.banner.offsetX = bannerOffsetX ? (Number(bannerOffsetX.value) || 0) : state.banner.offsetX;
   state.banner.offsetY = bannerOffsetY ? (Number(bannerOffsetY.value) || 0) : state.banner.offsetY;
@@ -1078,6 +1085,50 @@ function initializeApp() {
     }
     return TRANSPARENT_PNG;
   };
+
+  const populateBannerLogos = (desiredValue) => {
+    if (!bannerLogoSelect) {
+      return desiredValue || 'auto';
+    }
+    const previous = desiredValue != null ? desiredValue : (state.banner.logoMode || bannerLogoSelect.value || 'auto');
+    const fragment = doc.createDocumentFragment();
+    const autoOption = doc.createElement('option');
+    autoOption.value = 'auto';
+    autoOption.textContent = 'Auto (based on colour)';
+    fragment.appendChild(autoOption);
+
+    const keys = Object.keys(logoMap).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    keys.forEach((key) => {
+      const label = LOGO_DISPLAY_NAMES[key] || key;
+      const option = doc.createElement('option');
+      option.value = label;
+      option.textContent = label;
+      fragment.appendChild(option);
+    });
+
+    bannerLogoSelect.innerHTML = '';
+    bannerLogoSelect.appendChild(fragment);
+
+    if (!keys.length) {
+      bannerLogoSelect.value = 'auto';
+      return 'auto';
+    }
+
+    if (previous === 'auto') {
+      bannerLogoSelect.value = 'auto';
+      return 'auto';
+    }
+
+    const resolvedKey = resolveLogoKey(previous);
+    const aliasEntry = Object.entries(LOGO_ALIASES).find(([, canonical]) => canonical === resolvedKey);
+    const fallbackAlias = aliasEntry ? aliasEntry[0] : null;
+    const nextValue = fallbackAlias || (LOGO_DISPLAY_NAMES[resolvedKey] ? LOGO_DISPLAY_NAMES[resolvedKey] : resolvedKey);
+    const hasOption = Array.from(bannerLogoSelect.options).some((option) => option.value === nextValue);
+    bannerLogoSelect.value = hasOption ? nextValue : 'auto';
+    return bannerLogoSelect.value || 'auto';
+  };
+
+  state.banner.logoMode = populateBannerLogos(state.banner.logoMode);
 
   state.features.length = 0;
   if (Array.isArray(window._features) && window._features.length) {
@@ -1166,11 +1217,7 @@ function initializeApp() {
     itemsContainer.innerHTML = '';
     state.pricing.items.forEach((item, index) => {
       const row = doc.createElement('div');
-      row.className = 'item-row';
-      row.style.display = 'grid';
-      row.style.gridTemplateColumns = 'minmax(0, 1fr) 80px 100px 140px auto';
-      row.style.gap = '8px';
-      row.style.alignItems = 'center';
+      row.className = 'item-row line-item-row';
 
       const labelInput = doc.createElement('input');
       labelInput.type = 'text';
@@ -1437,7 +1484,7 @@ function initializeApp() {
     if (!feature) {
       return null;
     }
-    const { forceHero = false, context = 'preview', badgeText = '' } = options;
+    const { forceHero = false, context = 'preview' } = options;
     const titleText = feature.t ? String(feature.t).trim() : '';
     const copyText = feature.c ? String(feature.c).trim() : '';
     const iconSrc = feature.img || resolveIcon(feature.icon);
@@ -1471,13 +1518,6 @@ function initializeApp() {
     body.style.flexDirection = 'column';
     body.style.gap = '4px';
     body.style.minWidth = '0';
-
-    if (badgeText) {
-      const badge = doc.createElement('span');
-      badge.className = 'feature-badge note';
-      badge.textContent = badgeText;
-      body.appendChild(badge);
-    }
 
     if (titleText) {
       const title = doc.createElement('div');
@@ -1544,24 +1584,13 @@ function initializeApp() {
     let hasContent = false;
 
     if (heroFeatures.length) {
-      const groupHeading = doc.createElement('div');
-      groupHeading.className = 'feature-group-heading';
-      groupHeading.textContent = 'Key features';
-      featurePreview.appendChild(groupHeading);
-      for (const { feature, element } of heroFeatures) {
-        const cloned = buildFeatureCardElement(feature, { badgeText: 'Key feature' }) || element;
-        featurePreview.appendChild(cloned);
+      for (const { element } of heroFeatures) {
+        featurePreview.appendChild(element);
       }
       hasContent = true;
     }
 
     if (regularFeatures.length) {
-      if (heroFeatures.length) {
-        const supportingHeading = doc.createElement('div');
-        supportingHeading.className = 'feature-group-heading secondary';
-        supportingHeading.textContent = 'Supporting features';
-        featurePreview.appendChild(supportingHeading);
-      }
       for (const { element } of regularFeatures) {
         featurePreview.appendChild(element);
       }
@@ -1587,7 +1616,7 @@ function initializeApp() {
       if (heroFeatures.length) {
         keyFeaturesSection.style.display = '';
         for (const { feature } of heroFeatures) {
-          const card = buildFeatureCardElement(feature, { forceHero: true, context: 'key', badgeText: 'Key feature' });
+          const card = buildFeatureCardElement(feature, { forceHero: true, context: 'key' });
           if (card) {
             keyFeaturesList.appendChild(card);
           }
@@ -1654,23 +1683,7 @@ function initializeApp() {
     }
     if (!iconGalleryBuilt) {
       const entries = Object.entries(iconMap)
-        .filter(([rawName, rawSrc]) => {
-          if (typeof rawName !== 'string' || typeof rawSrc !== 'string') {
-            return false;
-          }
-          const name = rawName.trim();
-          const value = rawSrc.trim();
-          if (!name || !value) {
-            return false;
-          }
-          if (/^data:image\//i.test(value)) {
-            return true;
-          }
-          if (/^https?:\/\//i.test(value) || value.startsWith('//')) {
-            return true;
-          }
-          return /\.(png|jpe?g|gif|webp|svg)$/i.test(name);
-        })
+        .filter(([rawName, rawSrc]) => typeof rawName === 'string' && typeof rawSrc === 'string' && rawName.trim() && rawSrc.trim())
         .sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: 'base' }));
       iconGallery.innerHTML = "";
       iconItems.length = 0;
@@ -1690,7 +1703,19 @@ function initializeApp() {
         }
         const item = doc.createElement('div');
         item.className = "item";
-        const searchName = `${name} ${name.replace(/\.[^.]+$/, '')}`.toLowerCase();
+        const baseName = name.replace(/\.[^.]+$/, '');
+        const camelSeparated = baseName.replace(/([a-z])([A-Z])/g, '$1 $2');
+        const variations = new Set([
+          name,
+          baseName,
+          baseName.replace(/[_-]+/g, ' '),
+          baseName.replace(/[_-]+/g, ''),
+          baseName.replace(/\s+/g, ''),
+          baseName.replace(/[_-]+/g, ' ').replace(/\s+/g, ' '),
+          camelSeparated,
+          camelSeparated.replace(/\s+/g, '')
+        ]);
+        const searchName = Array.from(variations).join(' ').toLowerCase();
         item.dataset.name = searchName;
         item.tabIndex = 0;
         item.setAttribute('role', 'button');
@@ -1743,6 +1768,7 @@ function initializeApp() {
       const iconWrap = doc.createElement('div');
       iconWrap.className = "icon";
       const size = clampIconSizeValue(feature.size, feature.hero);
+      feature.size = size;
       iconWrap.style.width = `${size}px`;
       iconWrap.style.height = `${size}px`;
       const img = doc.createElement('img');
@@ -1837,7 +1863,8 @@ function initializeApp() {
       sizeInput.step = "1";
 
       const updateIconSizeLabel = () => {
-        sizeLabel.textContent = `Icon size (${sizeInput.value}px)`;
+        const heroSuffix = heroToggle.checked ? ' – hero layout' : '';
+        sizeLabel.textContent = `Icon size (${sizeInput.value}px${heroSuffix})`;
       };
 
       const applyHeroSizeBounds = () => {
@@ -1846,6 +1873,8 @@ function initializeApp() {
         const clamped = clampIconSizeValue(sizeInput.value, heroToggle.checked);
         sizeInput.value = String(clamped);
         feature.size = clamped;
+        iconWrap.style.width = `${clamped}px`;
+        iconWrap.style.height = `${clamped}px`;
         updateIconSizeLabel();
       };
 
@@ -1853,21 +1882,22 @@ function initializeApp() {
         const clamped = clampIconSizeValue(event.target.value, heroToggle.checked);
         feature.size = clamped;
         sizeInput.value = String(clamped);
+        iconWrap.style.width = `${clamped}px`;
+        iconWrap.style.height = `${clamped}px`;
         updateIconSizeLabel();
-        renderFeatureGrid();
         renderFeaturePreview();
       });
 
       heroToggle.addEventListener('change', (event) => {
         feature.hero = Boolean(event.target.checked);
+        card.classList.toggle('hero', feature.hero);
         applyHeroSizeBounds();
-        renderFeatureGrid();
         renderFeaturePreview();
       });
 
       sizeWrap.appendChild(sizeLabel);
       sizeWrap.appendChild(sizeInput);
-      sizeInput.value = String(feature.size != null ? feature.size : (heroToggle.checked ? 96 : 56));
+      sizeInput.value = String(feature.size != null ? feature.size : clampIconSizeValue(feature.size, heroToggle.checked));
       applyHeroSizeBounds();
 
       const removeBtn = doc.createElement('button');
