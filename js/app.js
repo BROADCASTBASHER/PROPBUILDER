@@ -1122,6 +1122,26 @@ function initializeApp() {
     }
   };
 
+  let bannerSyncScheduled = false;
+  const scheduleBannerSync = () => {
+    if (bannerSyncScheduled) {
+      return;
+    }
+    if (!bannerCanvas || typeof bannerCanvas.toDataURL !== "function") {
+      return;
+    }
+    bannerSyncScheduled = true;
+    const sync = () => {
+      bannerSyncScheduled = false;
+      pushBannerToPreview();
+    };
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(sync);
+    } else {
+      setTimeout(sync, 0);
+    }
+  };
+
   const clipRoundedRect = (ctx, x, y, w, h, r) => {
     ctx.beginPath();
     ctx.moveTo(x + r, y);
@@ -1294,11 +1314,14 @@ function initializeApp() {
         }
         const logoY = logoPadding;
         bannerCtx.drawImage(logoImage, logoX, logoY, logoWidth, logoHeight);
-        pushBannerToPreview();
+        scheduleBannerSync();
+      };
+      logoImage.onerror = () => {
+        scheduleBannerSync();
       };
       logoImage.src = logoSrc;
     } else {
-      pushBannerToPreview();
+      scheduleBannerSync();
     }
   };
 
@@ -2083,7 +2106,6 @@ function initializeApp() {
   if (bannerUse) {
     bannerUse.addEventListener('click', () => {
       drawBanner();
-      pushBannerToPreview();
     });
   }
   if (bannerDownload) {
