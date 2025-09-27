@@ -1105,20 +1105,44 @@ function initializeApp() {
     });
   };
 
+  let lastBannerSnapshot = null;
   const pushBannerToPreview = () => {
     if (!bannerCanvas || typeof bannerCanvas.toDataURL !== "function") {
+      if (lastBannerSnapshot) {
+        if (pageBanner) {
+          pageBanner.src = lastBannerSnapshot;
+        }
+        if (previewHeroImg) {
+          previewHeroImg.src = lastBannerSnapshot;
+        }
+      }
       return;
     }
+    let dataUrl = null;
     try {
-      const data = bannerCanvas.toDataURL('image/png');
+      dataUrl = bannerCanvas.toDataURL('image/png');
+    } catch (error) {
+      if (typeof console !== 'undefined' && console && typeof console.warn === 'function') {
+        console.warn('Unable to capture banner preview via toDataURL()', error);
+      }
+    }
+    if (typeof dataUrl === 'string' && dataUrl.startsWith('data:image/png')) {
+      lastBannerSnapshot = dataUrl;
       if (pageBanner) {
-        pageBanner.src = data;
+        pageBanner.src = dataUrl;
       }
       if (previewHeroImg) {
-        previewHeroImg.src = data;
+        previewHeroImg.src = dataUrl;
       }
-    } catch (error) {
-      // ignore canvas taint errors
+      return;
+    }
+    if (lastBannerSnapshot) {
+      if (pageBanner) {
+        pageBanner.src = lastBannerSnapshot;
+      }
+      if (previewHeroImg) {
+        previewHeroImg.src = lastBannerSnapshot;
+      }
     }
   };
 
@@ -1155,6 +1179,145 @@ function initializeApp() {
     ctx.quadraticCurveTo(x, y, x + r, y);
     ctx.closePath();
     ctx.clip();
+  };
+
+  const safeImageSourceCache = new Map();
+  const safeImageSourcePromises = new Map();
+
+  const needsSafeImagePrefetch = (src) => {
+    if (!src || typeof src !== 'string') {
+      return false;
+    }
+    if (src.startsWith('data:') || src.startsWith('blob:')) {
+      return false;
+    }
+    if (typeof window === 'undefined' || typeof location === 'undefined') {
+      return false;
+    }
+    if (location.protocol === 'file:') {
+      return true;
+    }
+    try {
+      const base = doc && doc.baseURI ? doc.baseURI : location.href;
+      const resolved = new URL(src, base);
+      return resolved.origin !== location.origin;
+    } catch (error) {
+      return false;
+    }
+  };
+
+  const readBlobAsDataUrl = (blob) => new Promise((resolve, reject) => {
+    if (typeof FileReader !== 'function') {
+      reject(new Error('FileReader is not supported'));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      resolve(typeof reader.result === 'string' ? reader.result : '');
+    };
+    reader.onerror = () => {
+      reject(reader.error || new Error('Failed to read blob as data URL'));
+    };
+    reader.readAsDataURL(blob);
+  });
+
+  const fetchImageAsDataUrl = (url) => {
+    const attempts = [];
+    if (typeof fetch === 'function') {
+      attempts.push(() => fetch(url, { mode: 'cors', credentials: 'omit' })
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error(`Unexpected response status: ${response.status}`);
+          }
+          return response.blob();
+        })
+        .then((blob) => readBlobAsDataUrl(blob)));
+    }
+    if (typeof XMLHttpRequest === 'function') {
+      attempts.push(() => new Promise((resolve, reject) => {
+        try {
+          const xhr = new XMLHttpRequest();
+          xhr.open('GET', url, true);
+          xhr.responseType = 'blob';
+          xhr.onload = () => {
+            if (xhr.status === 0 || (xhr.status >= 200 && xhr.status < 300)) {
+              let responseBlob = null;
+              if (typeof Blob === 'function') {
+                responseBlob = xhr.response instanceof Blob ? xhr.response : new Blob([xhr.response]);
+              }
+              if (responseBlob) {
+                readBlobAsDataUrl(responseBlob).then(resolve).catch(reject);
+              } else {
+                reject(new Error('Blob API is not supported for image conversion'));
+              }
+            } else {
+              reject(new Error(`Unexpected XHR status: ${xhr.status}`));
+            }
+          };
+          xhr.onerror = () => {
+            reject(new Error('XHR network error while fetching image'));
+          };
+          xhr.send();
+        } catch (error) {
+          reject(error);
+        }
+      }));
+    }
+    if (!attempts.length) {
+      return Promise.reject(new Error('No supported fetch mechanisms available'));
+    }
+    let chain = attempts[0]();
+    for (let i = 1; i < attempts.length; i += 1) {
+      const nextAttempt = attempts[i];
+      chain = chain.catch(() => nextAttempt());
+    }
+    return chain;
+  };
+
+  const ensureSafeImageSource = (src) => {
+    if (!src || typeof src !== 'string') {
+      return src;
+    }
+    if (src.startsWith('data:') || src.startsWith('blob:')) {
+      return src;
+    }
+    if (!needsSafeImagePrefetch(src)) {
+      safeImageSourceCache.set(src, src);
+      return src;
+    }
+    if (safeImageSourceCache.has(src)) {
+      return safeImageSourceCache.get(src);
+    }
+    if (safeImageSourcePromises.has(src)) {
+      return safeImageSourcePromises.get(src);
+    }
+    if (typeof window === 'undefined') {
+      return src;
+    }
+    const base = doc && doc.baseURI ? doc.baseURI : (typeof location !== 'undefined' ? location.href : undefined);
+    let absoluteUrl = src;
+    if (base) {
+      try {
+        absoluteUrl = new URL(src, base).href;
+      } catch (error) {
+        absoluteUrl = src;
+      }
+    }
+    const promise = fetchImageAsDataUrl(absoluteUrl)
+      .then((dataUrl) => {
+        const finalSrc = dataUrl || src;
+        safeImageSourceCache.set(src, finalSrc);
+        return finalSrc;
+      })
+      .catch(() => {
+        safeImageSourceCache.set(src, src);
+        return src;
+      })
+      .finally(() => {
+        safeImageSourcePromises.delete(src);
+      });
+    safeImageSourcePromises.set(src, promise);
+    return promise;
   };
 
   const drawBanner = () => {
@@ -1292,10 +1455,14 @@ function initializeApp() {
 
     if (hasRenderableLogo) {
       const logoImage = new Image();
+      logoImage.decoding = 'async';
+      logoImage.crossOrigin = 'anonymous';
       logoImage.onload = () => {
-        const ratio = (logoImage.naturalWidth > 0 && logoImage.naturalHeight > 0)
-          ? logoImage.naturalWidth / logoImage.naturalHeight
-          : 1;
+        if (!logoImage.naturalWidth || !logoImage.naturalHeight) {
+          scheduleBannerSync();
+          return;
+        }
+        const ratio = logoImage.naturalWidth / logoImage.naturalHeight;
         const previousRatio = logoAspectCache.get(logoSrc);
         logoAspectCache.set(logoSrc, ratio);
         if (!previousRatio || Math.abs(previousRatio - ratio) > 0.001) {
@@ -1319,7 +1486,25 @@ function initializeApp() {
       logoImage.onerror = () => {
         scheduleBannerSync();
       };
-      logoImage.src = logoSrc;
+      const safeSource = ensureSafeImageSource(logoSrc);
+      const assignSource = (source) => {
+        const finalSrc = (typeof source === 'string' && source) ? source : logoSrc;
+        if (logoImage.src === finalSrc) {
+          return;
+        }
+        try {
+          logoImage.src = finalSrc;
+        } catch (error) {
+          logoImage.src = logoSrc;
+        }
+      };
+      if (safeSource && typeof safeSource.then === 'function') {
+        safeSource.then(assignSource).catch(() => {
+          assignSource(logoSrc);
+        });
+      } else {
+        assignSource(safeSource);
+      }
     } else {
       scheduleBannerSync();
     }
