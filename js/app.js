@@ -1504,6 +1504,7 @@ function initializeApp() {
     }
     if (!iconGalleryBuilt) {
       const entries = Object.entries(iconMap)
+ codex/display-all-pictograms-in-modal-73ed4x
         .filter(([rawName, src]) => {
           if (typeof rawName !== 'string' || typeof src !== 'string') {
             return false;
@@ -1523,6 +1524,13 @@ function initializeApp() {
             return true;
           }
           return /\.(png|jpe?g|gif|webp|svg)$/i.test(name);
+
+        .filter(([name, src]) => {
+          if (typeof name !== 'string' || !src) {
+            return false;
+          }
+          return /\.(png|jpe?g)$/i.test(name);
+ main
         })
         .sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: 'base' }));
       iconGallery.innerHTML = "";
