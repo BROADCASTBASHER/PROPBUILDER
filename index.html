@@ -55,7 +55,7 @@
   <section id="tab-banner" class="no-print" style="display:none">
     <div class="card"><div class="hd"><h3>Generate brand banner</h3></div><div class="bd">
       <div class="row">
-        <div class="banner"><canvas id="banner" width="1000" height="300"></canvas></div>
+        <div class="banner"><canvas id="banner" data-export="banner-canvas" width="1000" height="300"></canvas></div>
         <div>
           <label>Headline</label>
           <input id="bannerTxt" type="text" value="Cloud voice for modern schools & businesses">
@@ -170,28 +170,28 @@ Includes installation, programming, call-flows & training</textarea></div>
     <div class="card"><div class="hd"><h3 class="no-print">Preview / Export</h3></div><div class="bd">
       <div class="pages">
         <section class="page" id="page1">
-          <img id="pageBanner" class="banner-img" src="">
+          <img id="pageBanner" class="banner-img" data-export="banner-image" src="">
           <div style="padding:24px 28px 32px">
-            <div style="font-size:28px;font-weight:800;margin:0 0 10px" id="pvHero">Cloud voice for modern schools & businesses</div>
+            <div style="font-size:28px;font-weight:800;margin:0 0 10px" id="pvHero" data-export="headline-main">Cloud voice for modern schools & businesses</div>
             <div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap">
-              <div style="font-weight:800;font-size:20px" id="pvCustomer">Customer</div>
-              <span class="badge" id="pvRef">Ref: TIPT-2025-09-14</span>
+              <div style="font-weight:800;font-size:20px" id="pvCustomer" data-export="customer">Customer</div>
+              <span class="badge" id="pvRef" data-export="ref">Ref: TIPT-2025-09-14</span>
             </div>
             <div class="overview">
               <div class="box">
                 <div class="title">Executive summary</div>
-                <div class="note" id="pvSummary" style="font-size:16px">A modern, cloud-based voice solution (TIPT) combining Telstra reliability with Cisco endpoints and Webex apps for flexible, scalable communications.</div>
+                <div class="note" id="pvSummary" data-export="exec-summary" style="font-size:16px">A modern, cloud-based voice solution (TIPT) combining Telstra reliability with Cisco endpoints and Webex apps for flexible, scalable communications.</div>
               </div>
               <div class="box">
                 <div class="title">Key benefits</div>
-                <ul id="pvBenefits" class="note" style="margin:6px 0 0 18px;font-size:16px"></ul>
+                <ul id="pvBenefits" class="note" data-export="key-benefits" style="margin:6px 0 0 18px;font-size:16px"></ul>
               </div>
             </div>
             <div class="features-preview" id="featuresPreview" style="margin-top:12px">
               <header class="features-preview-header" id="featuresPreviewHeader">
                 <div class="title">Features &amp; benefits</div>
               </header>
-              <div class="feature-list" id="featuresView"></div>
+              <div class="feature-list" data-export="features-standard" id="featuresView"></div>
             </div>
           </div>
         </section>
@@ -200,12 +200,12 @@ Includes installation, programming, call-flows & training</textarea></div>
             <h3 style="margin:0;font-size:28px">Inclusions & pricing breakdown</h3>
             <div class="key-feature-preview" id="keyFeaturesSection" style="display:none">
               <h3 style="margin:0 0 12px;font-size:26px">Key features</h3>
-              <div class="feature-list" id="keyFeaturesList"></div>
+              <div class="feature-list" data-export="features-hero" id="keyFeaturesList"></div>
             </div>
-            <table class="table" id="priceTableView"><thead><tr><th style="width:60%">Item</th><th>Qty</th><th>Unit</th><th id="thPriceV">Price (ex GST)</th></tr></thead><tbody></tbody></table>
+            <table class="table" data-export="pricing-table" id="priceTableView"><thead><tr><th style="width:60%">Item</th><th>Qty</th><th>Unit</th><th id="thPriceV">Price (ex GST)</th></tr></thead><tbody></tbody></table>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px">
-              <div><div class="note" style="font-weight:800;margin-bottom:6px">Commercial terms & dependencies</div><ul id="assumptions" class="note" style="margin:6px 0 0 18px;font-size:16px"></ul></div>
-              <div class="kpi"><div class="note" style="font-size:14px">Monthly investment</div><div class="big" id="pvMonthly">A$716.00 ex GST</div><div class="note" id="pvTerm2" style="font-size:14px">Term: 36 months</div></div>
+              <div><div class="note" style="font-weight:800;margin-bottom:6px">Commercial terms & dependencies</div><ul id="assumptions" class="note" data-export="terms-dependencies" style="margin:6px 0 0 18px;font-size:16px"></ul></div>
+              <div class="kpi" data-export="price-card"><div class="note" style="font-size:14px">Monthly investment</div><div class="big" id="pvMonthly" data-export="price-amount">A$716.00 ex GST</div><div class="note" id="pvTerm2" data-export="price-term" style="font-size:14px">Term: 36 months</div></div>
             </div>
           </div>
         </section>

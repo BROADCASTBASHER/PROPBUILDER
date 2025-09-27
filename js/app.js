@@ -420,334 +420,431 @@ function getHeroImageData() {
 }
 
 
-function buildEmailHTML() {
+
+
+async function buildEmailHTML() {
   if (typeof document === 'undefined') {
     return '';
   }
 
-  const safe = (value) => {
-    const raw = String(value == null ? '' : value);
-    if (typeof esc === 'function') {
-      return esc(raw);
+  const doc = document;
+  const fontData = 'd09GMgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==';
+  const presetKey = state && state.preset;
+  const preset = (PRESETS && presetKey && PRESETS[presetKey]) || (PRESETS && PRESETS.navy) || { bg: '#FAF7F3', panel: '#FFFFFF', headline: '#122B5C' };
+  const backgroundColor = preset && preset.bg ? preset.bg : '#FAF7F3';
+  const headlineColor = preset && preset.headline ? preset.headline : '#122B5C';
+  const panelBorderColor = '#DDE2F3';
+  const panelBackground = '#FFFFFF';
+  const baseFontStack = "'TelstraText',-apple-system,'Segoe UI',Roboto,Arial,sans-serif";
+  const baseFontFamily = `font-family:${baseFontStack};`;
+  const baseTextColor = '#273349';
+  const mutedTextColor = '#5B6573';
+  const imageCache = new Map();
+
+  const safe = (value) => String(value == null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+  const normalise = (value) => String(value == null ? '' : value).replace(/\r\n/g, '\n');
+
+  const findExportNode = (name, fallbackSelector) => {
+    if (!name) {
+      return fallbackSelector ? doc.querySelector(fallbackSelector) : null;
     }
-    return raw
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
+    return doc.querySelector(`[data-export="${name}"]`) || (fallbackSelector ? doc.querySelector(fallbackSelector) : null);
   };
 
-  const textFrom = (id) => {
-    const node = document.getElementById(id);
+  const textFrom = (name, fallbackSelector) => {
+    const node = findExportNode(name, fallbackSelector);
     if (!node || typeof node.textContent !== 'string') {
       return '';
     }
-    return node.textContent.trim();
+    return normalise(node.textContent).trim();
   };
 
-  const listText = (selector) => Array.from(document.querySelectorAll(selector))
-    .map((node) => (node && typeof node.textContent === 'string') ? node.textContent.trim() : '')
-    .filter((value) => value.length > 0);
+  const listFrom = (name, fallbackSelector) => {
+    const container = findExportNode(name, fallbackSelector);
+    if (!container) {
+      return [];
+    }
+    const items = Array.from(container.querySelectorAll('li'))
+      .map((item) => normalise(item.textContent).trim())
+      .filter((item) => item.length > 0);
+    if (items.length) {
+      return items;
+    }
+    const fallbackText = normalise(container.textContent).trim();
+    if (!fallbackText) {
+      return [];
+    }
+    return fallbackText.split('\n').map((line) => line.trim()).filter((line) => line.length > 0);
+  };
 
-  const heroImage = getHeroImageData();
-  const preset = (typeof PRESETS === 'object' && PRESETS && state && PRESETS[state.preset])
-    || (PRESETS && PRESETS.navy)
-    || { bg: '#FAF7F3', headline: '#122B5C', panel: '#FFFFFF' };
-  const backgroundColor = preset && preset.bg ? preset.bg : '#FAF7F3';
-  const headlineColor = preset && preset.headline ? preset.headline : '#122B5C';
-
-  const logoMap = (typeof window !== 'undefined' && window.__LOGO_DATA__ && typeof window.__LOGO_DATA__ === 'object')
-    ? window.__LOGO_DATA__
-    : {};
-
-  const resolveLogoKey = (requested) => {
-    if (!requested || requested === 'auto') {
-      if (preset && preset.logo) {
-        return preset.logo;
+  const measureWidth = (element, fallback) => {
+    if (!element) {
+      return fallback || 0;
+    }
+    if (typeof element.getBoundingClientRect === 'function') {
+      const rect = element.getBoundingClientRect();
+      if (rect && rect.width) {
+        return Math.round(rect.width);
       }
-      if (PRESETS && PRESETS.navy && PRESETS.navy.logo) {
-        return PRESETS.navy.logo;
+    }
+    if (typeof getComputedStyle === 'function') {
+      const computed = getComputedStyle(element);
+      if (computed && computed.width) {
+        const numeric = Number.parseFloat(computed.width);
+        if (Number.isFinite(numeric) && numeric > 0) {
+          return Math.round(numeric);
+        }
       }
+    }
+    if (element.style && element.style.width) {
+      const match = element.style.width.match(/(\d+(?:\.\d+)?)/);
+      if (match) {
+        const numeric = Number.parseFloat(match[1]);
+        if (Number.isFinite(numeric)) {
+          return Math.round(numeric);
+        }
+      }
+    }
+    if (element.width && Number.isFinite(Number(element.width))) {
+      return Number(element.width);
+    }
+    return fallback || 0;
+  };
+
+  const toDataUri = async (src) => {
+    if (!src || String(src).startsWith('data:')) {
+      return src || '';
+    }
+    if (imageCache.has(src)) {
+      return imageCache.get(src);
+    }
+    let absolute = src;
+    try {
+      absolute = new URL(src, doc.baseURI).href;
+    } catch (error) {
+      absolute = src;
+    }
+    if (typeof fetch !== 'function') {
+      imageCache.set(src, absolute);
+      return absolute;
+    }
+    try {
+      const response = await fetch(absolute, { cache: 'force-cache' });
+      if (!response || !response.ok) {
+        imageCache.set(src, absolute);
+        return absolute;
+      }
+      const mime = (response.headers && response.headers.get('content-type')) || 'application/octet-stream';
+      if (typeof FileReader === 'function') {
+        const blob = await response.blob();
+        const data = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result || '');
+          reader.onerror = () => reject(new Error('read-failed'));
+          reader.readAsDataURL(blob);
+        });
+        imageCache.set(src, data);
+        return data;
+      }
+      if (typeof Buffer !== 'undefined') {
+        const arrayBuffer = await response.arrayBuffer();
+        const base64 = Buffer.from(arrayBuffer).toString('base64');
+        const data = `data:${mime};base64,${base64}`;
+        imageCache.set(src, data);
+        return data;
+      }
+      imageCache.set(src, absolute);
+      return absolute;
+    } catch (error) {
+      imageCache.set(src, absolute);
+      return absolute;
+    }
+  };
+
+  const imageFromElement = async (img, options = {}) => {
+    if (!img) {
+      return null;
+    }
+    const src = img.currentSrc || img.src || '';
+    if (!src) {
+      return null;
+    }
+    const dataUri = await toDataUri(src);
+    const width = options.width || measureWidth(img, options.fallbackWidth || 0) || (img.naturalWidth ? Math.min(img.naturalWidth, 320) : 0);
+    const alt = img.alt ? img.alt.trim() : '';
+    return { src: dataUri, width, alt };
+  };
+
+  const extractFeatureCard = async (node) => {
+    if (!node) {
+      return null;
+    }
+    const titleNode = node.querySelector('[data-export-feature-title]');
+    const copyNodes = Array.from(node.querySelectorAll('[data-export-feature-copy]'));
+    const listNode = node.querySelector('[data-export-feature-list]');
+    const iconNode = node.querySelector('[data-export-feature-image]');
+    const iconWrap = iconNode ? iconNode.parentElement : null;
+    const title = titleNode ? normalise(titleNode.textContent).trim() : '';
+    const copy = copyNodes.map((el) => normalise(el.textContent).trim()).filter((value) => value.length > 0);
+    const bullets = listNode
+      ? Array.from(listNode.querySelectorAll('li')).map((el) => normalise(el.textContent).trim()).filter((value) => value.length > 0)
+      : [];
+    const image = iconNode ? await imageFromElement(iconNode, { width: measureWidth(iconWrap, 72), fallbackWidth: 72 }) : null;
+    if (!title && !copy.length && !bullets.length && !image) {
+      return null;
+    }
+    return { title, copy, bullets, image };
+  };
+
+  const collectFeatureCards = async (selector) => {
+    const nodes = Array.from(doc.querySelectorAll(selector));
+    const results = [];
+    for (const node of nodes) {
+      const card = await extractFeatureCard(node);
+      if (card) {
+        results.push(card);
+      }
+    }
+    return results;
+  };
+
+  const renderFeatureCard = (feature, options = {}) => {
+    const { hero = false } = options;
+    const parts = [];
+    parts.push('<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;border:1px solid #E7E7EA;border-radius:14px;background:#FFFFFF;">');
+    parts.push('<tr>');
+    if (feature.image && feature.image.src) {
+      const width = Math.max(48, feature.image.width || (hero ? 96 : 64));
+      parts.push(`<td valign="top" style="padding:14px 12px 14px 14px;width:${width}px;">`);
+      parts.push(`<img src="${feature.image.src}" alt="${safe(feature.image.alt || feature.title || 'Feature image')}" width="${width}" style="width:${width}px;height:auto;display:block;border:0;">`);
+      parts.push('</td>');
+    } else {
+      parts.push('<td valign="top" style="padding:14px 0 14px 0;width:0;"></td>');
+    }
+    parts.push('<td valign="top" style="padding:14px 18px 14px 12px;">');
+    if (feature.title) {
+      const size = hero ? 20 : 18;
+      parts.push(`<div style="${baseFontFamily}font-weight:700;font-size:${size}px;color:${headlineColor};margin:0 0 6px;">${safe(feature.title)}</div>`);
+    }
+    feature.copy.forEach((line, index) => {
+      parts.push(`<div style="${baseFontFamily}color:${baseTextColor};font-size:16px;line-height:1.6;margin:${index === 0 && !feature.title ? '0' : '8px 0 0'};">${safe(line)}</div>`);
+    });
+    if (feature.bullets.length) {
+      parts.push(`<ul style="${baseFontFamily}color:${baseTextColor};font-size:16px;line-height:1.6;margin:${feature.copy.length ? '12px 0 0' : '0'};padding-left:20px;">${feature.bullets.map((item) => `<li style="margin:0 0 6px;">${safe(item)}</li>`).join('')}</ul>`);
+    }
+    parts.push('</td>');
+    parts.push('</tr>');
+    parts.push('</table>');
+    return parts.join('');
+  };
+
+  const renderFeatureGroup = (features, options = {}) => {
+    if (!features.length) {
       return '';
     }
-    if (typeof LOGO_ALIASES === 'object' && LOGO_ALIASES && LOGO_ALIASES[requested]) {
-      return LOGO_ALIASES[requested];
-    }
-    return requested;
+    const rows = [];
+    rows.push('<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;">');
+    features.forEach((feature, index) => {
+      rows.push(`<tr><td style="padding:${index === 0 ? '0' : '16px'} 0 0;">${renderFeatureCard(feature, options)}</td></tr>`);
+    });
+    rows.push('</table>');
+    return rows.join('');
   };
 
-  const resolveLogoSrc = () => {
-    const requested = state && state.banner ? state.banner.logoMode : 'auto';
-    const key = resolveLogoKey(requested);
-    if (key && logoMap[key]) {
-      return logoMap[key];
+  const pricingTableMarkup = (() => {
+    const table = findExportNode('pricing-table', '#priceTableView');
+    if (!table) {
+      return '';
     }
-    const fallback = PRESETS && PRESETS.navy && PRESETS.navy.logo;
-    if (fallback && logoMap[fallback]) {
-      return logoMap[fallback];
+    const headerCells = Array.from(table.querySelectorAll('thead th'));
+    const bodyRows = Array.from(table.querySelectorAll('tbody tr'));
+    if (!headerCells.length || !bodyRows.length) {
+      return '';
     }
-    const keys = Object.keys(logoMap);
-    return keys.length ? logoMap[keys[0]] : '';
-  };
+    const headerHtml = headerCells.map((cell) => `<th style="${baseFontFamily}font-size:15px;font-weight:700;color:${headlineColor};background:#F6F8FB;border-bottom:1px solid #E7E7EA;padding:12px 10px;text-align:left;">${safe(normalise(cell.textContent).trim())}</th>`).join('');
+    const rowsHtml = bodyRows.map((row) => {
+      const cells = Array.from(row.querySelectorAll('td'));
+      if (!cells.length) {
+        return '';
+      }
+      const cellHtml = cells.map((cell) => `<td style="${baseFontFamily}font-size:15px;color:${baseTextColor};line-height:1.6;border-bottom:1px solid #E7E7EA;padding:12px 10px;vertical-align:top;">${safe(normalise(cell.textContent).trim()).replace(/\n/g, '<br>')}</td>`).join('');
+      return `<tr>${cellHtml}</tr>`;
+    }).join('');
+    return `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;border:1px solid #E7E7EA;border-radius:14px;overflow:hidden;">` + `<thead><tr>${headerHtml}</tr></thead>` + `<tbody>${rowsHtml}</tbody></table>`;
+  })();
 
-  const logoSrc = resolveLogoSrc();
+  const bannerCanvas = findExportNode('banner-canvas', '#banner');
+  let bannerData = '';
+  if (bannerCanvas && typeof bannerCanvas.toDataURL === 'function') {
+    try {
+      bannerData = bannerCanvas.toDataURL('image/png', 1.0);
+    } catch (error) {
+      bannerData = '';
+    }
+  }
+  if (!bannerData) {
+    const bannerImg = findExportNode('banner-image', '#pageBanner');
+    const fallbackBanner = bannerImg ? await imageFromElement(bannerImg, { width: 640, fallbackWidth: 640 }) : null;
+    bannerData = fallbackBanner && fallbackBanner.src ? fallbackBanner.src : '';
+  }
 
-  const customer = textFrom('pvCustomer');
-  const referenceRaw = textFrom('pvRef');
+  const customer = textFrom('customer', '#pvCustomer');
+  const referenceRaw = textFrom('ref', '#pvRef');
   const reference = referenceRaw
     ? (referenceRaw.toLowerCase().startsWith('ref') ? referenceRaw : `Ref: ${referenceRaw}`)
     : '';
-  const heroTitle = textFrom('pvHero');
-  const heroSubtitle = textFrom('pvSub');
+  const mainHeadline = textFrom('headline-main', '#pvHero');
+  const subHeadline = textFrom('headline-sub', '#pvSub');
+  const summaryText = textFrom('exec-summary', '#pvSummary');
+  const keyBenefits = listFrom('key-benefits', '#pvBenefits');
+  const standardFeatures = await collectFeatureCards('[data-export="features-standard"] [data-export-feature="card"][data-export-feature-type="standard"]');
+  const heroFeatures = await collectFeatureCards('[data-export="features-hero"] [data-export-feature="card"]');
+  const priceAmount = textFrom('price-amount', '#pvMonthly');
+  const priceTerm = textFrom('price-term', '#pvTerm2');
+  const terms = listFrom('terms-dependencies', '#assumptions');
+  const priceCardNode = findExportNode('price-card');
+  const priceLabel = priceCardNode && priceCardNode.children && priceCardNode.children[0] && priceCardNode.children[0].textContent
+    ? normalise(priceCardNode.children[0].textContent).trim()
+    : 'Monthly investment';
+  const priceComputed = priceCardNode && typeof getComputedStyle === 'function' ? getComputedStyle(priceCardNode) : null;
+  const priceBackground = __rgbToHex__px((priceComputed && priceComputed.backgroundColor) || (priceCardNode && priceCardNode.style && priceCardNode.style.backgroundColor) || '#FFFFFF');
+  const priceBorderColor = __rgbToHex__px((priceComputed && priceComputed.borderColor) || (priceCardNode && priceCardNode.style && priceCardNode.style.borderColor) || '#F6F0E8');
+  const priceBorderWidth = (priceComputed && priceComputed.borderTopWidth) || (priceCardNode && priceCardNode.style && priceCardNode.style.borderWidth) || '2px';
+  const priceBorderRadius = (priceComputed && priceComputed.borderRadius) || (priceCardNode && priceCardNode.style && priceCardNode.style.borderRadius) || '16px';
 
-  const baseCopyStyle = 'font-size:15px;line-height:1.6;color:#273349;';
-  const summaryRaw = textFrom('pvSummary');
-  const summaryHtml = summaryRaw
-    ? `<div style="margin:0;${baseCopyStyle}">${safe(summaryRaw)
-      .replace(/\n{2,}/g, `</div><div style="margin:12px 0 0;${baseCopyStyle}">`)
-      .replace(/\n/g, '<br>')}</div>`
-    : '';
+  const summaryParagraphs = normalise(summaryText).split(/\n{2,}/).map((chunk) => chunk.trim()).filter((chunk) => chunk.length > 0);
 
-  const benefits = listText('#pvBenefits li');
-  const benefitsHtml = benefits.length
-    ? `<ul style="margin:0;padding-left:18px;${baseCopyStyle}">${benefits.map((item) => `<li style="margin:0 0 8px 0;">${safe(item)}</li>`).join('')}</ul>`
-    : '';
+  const contentWidth = 640;
+  const modules = [];
 
-  const monthlyRaw = textFrom('pvMonthly');
-  const monthlyDetails = (() => {
-    if (!monthlyRaw) {
-      return { amount: '', gst: '' };
-    }
-    const match = monthlyRaw.match(/(inc|ex)\s+gst/i);
-    const amount = match
-      ? monthlyRaw.replace(match[0], '').replace(/\s{2,}/g, ' ').trim()
-      : monthlyRaw.trim();
-    const gst = match ? (match[1].toLowerCase() === 'inc' ? 'INC GST' : 'EX GST') : '';
-    return { amount, gst };
-  })();
-
-  const term = textFrom('pvTerm2') || textFrom('exportTerm');
-  const assumptions = listText('#assumptions li');
-
-  const priceRows = getPriceRows();
-  const priceModeLabel = state && state.pricing && state.pricing.gst === 'inc'
-    ? 'Price (inc GST)'
-    : 'Price (ex GST)';
-
-  const rawFeatures = Array.isArray(state && state.features) && state.features.length
-    ? state.features
-    : (typeof window !== 'undefined' && Array.isArray(window._features) ? window._features : []);
-
-  const features = rawFeatures
-    .map((feature) => ({
-      title: String(feature.t ?? feature.title ?? '').trim(),
-      copy: String(feature.c ?? feature.copy ?? '').trim(),
-      image: String(feature.img ?? feature.image ?? '').trim(),
-      hero: Boolean(feature.hero),
-      size: Number(feature.size) || 0
-    }))
-    .filter((feature) => feature.title || feature.copy || feature.image);
-
-  const heroFeatures = features.filter((feature) => feature.hero);
-  const standardFeatures = features.filter((feature) => !feature.hero);
-
-  const renderFeatureCopy = (text) => {
-    if (!text) {
-      return '';
-    }
-    if (text.includes('\n')) {
-      const bullets = typeof bulletify === 'function' ? bulletify(text) : '';
-      if (bullets) {
-        return `<ul style="margin:0;padding-left:18px;font-size:14px;line-height:1.6;color:#2C3440;">${bullets}</ul>`;
-      }
-    }
-    return `<div style="margin:0;font-size:14px;line-height:1.6;color:#2C3440;">${safe(text).replace(/\n/g, '<br>')}</div>`;
-  };
-
-  const renderFeatureCard = (feature, heroMode) => {
-    if (!feature) {
-      return '';
-    }
-    const title = feature.title
-      ? `<div style="font-size:${heroMode ? '22px' : '17px'};font-weight:700;margin:0 0 8px;color:#0B1220;">${safe(feature.title)}</div>`
-      : '';
-    const copy = renderFeatureCopy(feature.copy);
-    const imageMarkup = feature.image
-      ? `<img src="${safe(feature.image)}" alt="${safe(feature.title || 'Feature image')}" style="display:block;width:${heroMode ? '100%' : '72px'};height:auto;max-height:${heroMode ? '220px' : '72px'};border-radius:${heroMode ? '20px' : '12px'};object-fit:${heroMode ? 'cover' : 'contain'};">`
-      : '';
-    if (!title && !copy && !imageMarkup) {
-      return '';
-    }
-    if (heroMode) {
-      const heroRows = [];
-      if (imageMarkup) {
-        heroRows.push(`<tr><td style="padding:0 0 16px;"><div style="overflow:hidden;border-radius:20px;">${imageMarkup}</div></td></tr>`);
-      }
-      heroRows.push(`<tr><td style="padding:0 24px 24px;">${title}${copy}</td></tr>`);
-      return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;border:1px solid #D6DBEA;border-radius:22px;background:#FFFFFF;">${heroRows.join('')}</table>`;
-    }
-    const rows = [];
-    rows.push('<tr>');
-    rows.push(`<td style="width:88px;padding:20px 0 20px 20px;vertical-align:top;">${imageMarkup || '<div style="width:72px;height:72px;border-radius:12px;background:#EDF0FA;"></div>'}</td>`);
-    rows.push(`<td style="padding:20px;vertical-align:top;">${title || copy ? `${title}${copy}` : '&nbsp;'}</td>`);
-    rows.push('</tr>');
-    return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;border:1px solid #D6DBEA;border-radius:18px;background:#FFFFFF;">${rows.join('')}</table>`;
-  };
-
-  const renderFeatureGrid = () => {
-    const rows = [];
-    for (const feature of heroFeatures) {
-      const card = renderFeatureCard(feature, true);
-      if (card) {
-        rows.push(`<tr><td colspan="2" style="padding:0 0 18px;">${card}</td></tr>`);
-      }
-    }
-    for (let i = 0; i < standardFeatures.length; i += 2) {
-      const left = renderFeatureCard(standardFeatures[i], false);
-      const rightFeature = standardFeatures[i + 1];
-      const right = rightFeature ? renderFeatureCard(rightFeature, false) : '';
-      if (left || right) {
-        rows.push(`<tr><td style="padding:0 9px 18px 0;vertical-align:top;width:50%;">${left || '&nbsp;'}</td><td style="padding:0 0 18px 9px;vertical-align:top;width:50%;">${right || '&nbsp;'}</td></tr>`);
-      }
-    }
-    if (!rows.length) {
-      return '';
-    }
-    return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;">${rows.join('')}</table>`;
-  };
-
-  const featureGrid = renderFeatureGrid();
-
-  let overviewContent = '';
-  if (summaryHtml || benefitsHtml) {
-    const cells = [];
-    if (summaryHtml) {
-      cells.push(`<td style="width:${benefitsHtml ? '50%' : '100%'};padding:0 ${benefitsHtml ? '16px' : '0'} 0 0;vertical-align:top;"><div style="font-weight:800;font-size:20px;color:#0B1220;margin:0 0 12px;">Executive summary</div>${summaryHtml}</td>`);
-    }
-    if (benefitsHtml) {
-      cells.push(`<td style="width:${summaryHtml ? '50%' : '100%'};padding:0 0 0 ${summaryHtml ? '16px' : '0'};vertical-align:top;"><div style="font-weight:800;font-size:20px;color:#0B1220;margin:0 0 12px;">Key benefits</div>${benefitsHtml}</td>`);
-    }
-    overviewContent = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;background:#FFFFFF;border:1px solid #E1E6F4;border-radius:26px;padding:28px;">`;
-    overviewContent += `<tr>${cells.join('')}</tr>`;
-    overviewContent += '</table>';
+  if (bannerData) {
+    modules.push(`<tr><td style="padding:0;margin:0;"><img src="${bannerData}" alt="Proposal banner" width="${contentWidth}" style="width:100%;max-width:${contentWidth}px;height:auto;display:block;border:0;"></td></tr>`);
   }
 
-  let featuresContent = '';
-  if (featureGrid) {
-    featuresContent = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;background:#FFFFFF;border:1px solid #E1E6F4;border-radius:26px;padding:28px;">`;
-    featuresContent += '<tr><td style="font-weight:800;font-size:20px;color:#0B1220;">Features &amp; highlights</td></tr>';
-    featuresContent += `<tr><td style="padding:20px 0 0;">${featureGrid}</td></tr>`;
-    featuresContent += '</table>';
-  }
-
-  let pricingTable = '';
-  if (priceRows.length) {
-    const headerCells = ['Item', 'Qty', 'Unit', priceModeLabel]
-      .map((label) => `<th style="padding:12px 14px;font-size:12px;text-transform:uppercase;letter-spacing:0.08em;color:#566079;background:#F1F3F9;text-align:left;">${safe(label)}</th>`)
-      .join('');
-    const bodyRows = priceRows
-      .map((row) => `<tr>${row.map((cell) => `<td style="padding:12px 14px;border-top:1px solid #E2E6F1;font-size:14px;color:#2C3440;">${cell || '&nbsp;'}</td>`).join('')}</tr>`)
-      .join('');
-    const fallbackRow = `<tr><td colspan="4" style="padding:14px;font-size:14px;color:#5B6573;">Add line items to populate pricing.</td></tr>`;
-    pricingTable = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;border:1px solid #DADFF0;border-radius:18px;overflow:hidden;background:#FFFFFF;"><thead><tr>${headerCells}</tr></thead><tbody>${bodyRows || fallbackRow}</tbody></table>`;
-  }
-
-  const assumptionsHtml = assumptions.length
-    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;border:1px solid #D6DBEA;border-radius:18px;background:#FFFFFF;"><tr><td style="padding:18px;"><div style="font-weight:700;font-size:16px;color:#0B1220;margin:0 0 8px;">Commercial terms &amp; dependencies</div><ul style="margin:0;padding-left:18px;font-size:14px;line-height:1.6;color:#2C3440;">${assumptions.map((item) => `<li style="margin:0 0 6px;">${safe(item)}</li>`).join('')}</ul></td></tr></table>`
-    : '';
-
-  const monthlyCard = (monthlyDetails.amount || monthlyDetails.gst || term)
-    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;border:1px solid #D6DBEA;border-radius:18px;background:#FFFFFF;"><tr><td style="padding:18px;"><div style="font-weight:700;font-size:16px;color:#0B1220;margin:0 0 12px;">Monthly investment</div>${monthlyDetails.amount ? `<div style="font-size:30px;font-weight:800;color:#122B5C;line-height:1.1;">${safe(monthlyDetails.amount)}</div>` : ''}${monthlyDetails.gst ? `<div style="margin-top:6px;font-size:12px;color:#5B6573;letter-spacing:0.12em;text-transform:uppercase;">${safe(monthlyDetails.gst)}</div>` : ''}${term ? `<div style="margin-top:14px;font-size:14px;color:#2C3440;">${safe(term)}</div>` : ''}</td></tr></table>`
-    : '';
-
-  let pricingContent = '';
-  if (pricingTable || monthlyCard || assumptionsHtml) {
-    pricingContent = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;background:#FFFFFF;border:1px solid #E1E6F4;border-radius:26px;padding:28px;">`;
-    pricingContent += '<tr><td style="font-weight:800;font-size:20px;color:#0B1220;">Investment overview</td></tr>';
-    if (pricingTable) {
-      pricingContent += `<tr><td style="padding:20px 0 0;">${pricingTable}</td></tr>`;
-    }
-    if (monthlyCard) {
-      pricingContent += `<tr><td style="padding:24px 0 0;">${monthlyCard}</td></tr>`;
-    }
-    if (assumptionsHtml) {
-      pricingContent += `<tr><td style="padding:24px 0 0;">${assumptionsHtml}</td></tr>`;
-    }
-    pricingContent += '</table>';
-  }
-
-  const identityParts = [];
+  const headerParts = [];
   if (customer) {
-    identityParts.push(`<div style="font-size:15px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;margin:0;color:${headlineColor};">${safe(customer)}</div>`);
+    headerParts.push(`<div style="${baseFontFamily}font-size:20px;font-weight:800;color:${headlineColor};margin:0 0 10px;">${safe(customer)}</div>`);
   }
   if (reference) {
-    identityParts.push(`<div style="margin-top:6px;font-size:12px;letter-spacing:0.18em;text-transform:uppercase;color:${headlineColor};opacity:0.82;">${safe(reference)}</div>`);
+    headerParts.push(`<div style="margin:0 0 16px;">` + `<span style="${baseFontFamily}font-size:13px;font-weight:600;color:${headlineColor};background:#EEF2FF;border:1px solid #E0E7FF;border-radius:999px;padding:5px 12px;display:inline-block;">${safe(reference)}</span>` + `</div>`);
   }
-  if (heroTitle) {
-    identityParts.push(`<div style="margin-top:16px;font-size:30px;font-weight:800;line-height:1.25;color:${headlineColor};">${safe(heroTitle)}</div>`);
+  if (mainHeadline) {
+    headerParts.push(`<div style="${baseFontFamily}font-size:26px;font-weight:800;color:${headlineColor};margin:0 0 8px;">${safe(mainHeadline)}</div>`);
   }
-  if (heroSubtitle) {
-    identityParts.push(`<div style="margin-top:12px;font-size:17px;line-height:1.6;color:${headlineColor};opacity:0.9;">${safe(heroSubtitle)}</div>`);
+  if (subHeadline) {
+    headerParts.push(`<div style="${baseFontFamily}font-size:18px;font-weight:500;color:${mutedTextColor};margin:0 0 4px;">${safe(subHeadline)}</div>`);
   }
-  const identityHtml = identityParts.join('');
-
-  const heroRows = [];
-  if (heroImage) {
-    heroRows.push(`<tr><td style="line-height:0;"><img src="${safe(heroImage)}" alt="${safe(heroTitle || 'Banner image')}" style="display:block;width:100%;height:auto;"></td></tr>`);
-  }
-  if (identityHtml || logoSrc) {
-    const logoBlock = logoSrc ? `<td style="width:152px;vertical-align:top;text-align:right;"><img src="${safe(logoSrc)}" alt="Telstra logo" style="display:block;max-width:140px;height:auto;"></td>` : '';
-    heroRows.push(`<tr><td style="padding:32px 36px 36px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;"><tr><td style="vertical-align:top;">${identityHtml || '&nbsp;'}</td>${logoBlock}</tr></table></td></tr>`);
+  if (headerParts.length) {
+    modules.push(`<tr><td style="padding:${modules.length ? '28px' : '32px'} 32px 0;">${headerParts.join('')}</td></tr>`);
   }
 
-  let heroSection = '';
-  if (heroRows.length) {
-    heroSection = `<tr><td style="padding:0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;background:${backgroundColor};border-radius:36px 36px 0 0;overflow:hidden;">${heroRows.join('')}</table></td></tr>`;
-  }
-
-  const docTitle = heroTitle || customer || 'Telstra Proposal';
-  const baseFontFamily = "font-family:'Telstra Text',Arial,sans-serif;";
-  const baseTextColor = 'color:#1D2738;';
-  const wrapModule = (content, topPadding) => `<tr><td style="padding:${topPadding} 36px 0;${baseFontFamily}${baseTextColor}">${content}</td></tr>`;
-  const modules = [];
-  if (heroSection) {
-    modules.push(heroSection);
-  }
-  const addModule = (content, topPadding) => {
-    if (content) {
-      modules.push(wrapModule(content, topPadding));
+  if (summaryParagraphs.length || keyBenefits.length) {
+    const overviewParts = [];
+    overviewParts.push('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;">');
+    overviewParts.push('<tr>');
+    overviewParts.push('<td valign="top" style="padding:0 12px 0 0;width:50%;">');
+    overviewParts.push(`<div style="${baseFontFamily}font-size:18px;font-weight:700;color:${headlineColor};margin:0 0 10px;">Executive summary</div>`);
+    if (summaryParagraphs.length) {
+      summaryParagraphs.forEach((paragraph, index) => {
+        overviewParts.push(`<div style="${baseFontFamily}color:${baseTextColor};font-size:16px;line-height:1.6;margin:${index === 0 ? '0' : '12px 0 0'};">${safe(paragraph).replace(/\n/g, '<br>')}</div>`);
+      });
+    } else {
+      overviewParts.push(`<div style="${baseFontFamily}color:${mutedTextColor};font-size:16px;line-height:1.6;margin:0;">&nbsp;</div>`);
     }
-  };
-  addModule(overviewContent, heroSection ? '32px' : '36px');
-  addModule(featuresContent, '32px');
-  addModule(pricingContent, '32px');
-  modules.push(`<tr><td style="padding:32px 36px 36px;font-size:12px;line-height:1.5;text-align:center;color:#5B6573;${baseFontFamily}">Prepared with the TBTC VIC EAST Proposal Studio.</td></tr>`);
-
-  const out = [];
-  out.push('<!doctype html>');
-  out.push('<html lang="en">');
-  out.push('<head>');
-  out.push('<meta charset="utf-8">');
-  out.push('<meta name="viewport" content="width=device-width,initial-scale=1">');
-  out.push(`<title>${safe(docTitle)}</title>`);
-  out.push('<style type="text/css">body{margin:0;background:#E8ECF8;}img{border:0;display:block;}table{border-collapse:collapse;}</style>');
-  out.push('</head>');
-  out.push(`<body style="margin:0;padding:0;background:#E8ECF8;${baseFontFamily}${baseTextColor}">`);
-  out.push('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;background:#E8ECF8;padding:32px 0;">');
-  out.push('<tr><td align="center" style="padding:0 16px;">');
-  out.push(`<table role="presentation" width="640" cellpadding="0" cellspacing="0" style="width:100%;max-width:640px;background:#FFFFFF;border:1px solid #DDE2F3;border-radius:36px;overflow:hidden;">`);
-  out.push('<tbody>');
-  if (modules.length) {
-    out.push(modules.join(''));
+    overviewParts.push('</td>');
+    overviewParts.push('<td valign="top" style="padding:0 0 0 12px;width:50%;">');
+    overviewParts.push(`<div style="${baseFontFamily}font-size:18px;font-weight:700;color:${headlineColor};margin:0 0 10px;">Key benefits</div>`);
+    if (keyBenefits.length) {
+      overviewParts.push(`<ul style="${baseFontFamily}color:${baseTextColor};font-size:16px;line-height:1.6;margin:0;padding-left:20px;">${keyBenefits.map((item) => `<li style="margin:0 0 8px;">${safe(item)}</li>`).join('')}</ul>`);
+    } else {
+      overviewParts.push(`<div style="${baseFontFamily}color:${mutedTextColor};font-size:16px;line-height:1.6;">&nbsp;</div>`);
+    }
+    overviewParts.push('</td>');
+    overviewParts.push('</tr>');
+    overviewParts.push('</table>');
+    modules.push(`<tr><td style="padding:${modules.length ? '28px' : '32px'} 32px 0;">${overviewParts.join('')}</td></tr>`);
   }
-  out.push('</tbody>');
-  out.push('</table>');
-  out.push('</td></tr>');
-  out.push('</table>');
-  out.push('</body>');
-  out.push('</html>');
-  return out.join('');
+
+  if (standardFeatures.length) {
+    const featureBlock = [];
+    featureBlock.push(`<div style="${baseFontFamily}font-size:22px;font-weight:700;color:${headlineColor};margin:0 0 16px;">Features &amp; benefits</div>`);
+    featureBlock.push(renderFeatureGroup(standardFeatures, { hero: false }));
+    modules.push(`<tr><td style="padding:28px 32px 0;">${featureBlock.join('')}</td></tr>`);
+  }
+
+  if (heroFeatures.length) {
+    modules.push(`<tr><td style="padding:32px 32px 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="border-top:1px solid #E5E6EA;height:1px;font-size:1px;line-height:1px;">&nbsp;</td></tr></table></td></tr>`);
+    const heroBlock = [];
+    heroBlock.push(`<div style="${baseFontFamily}font-size:22px;font-weight:700;color:${headlineColor};margin:0 0 16px;">Key Features Included</div>`);
+    heroBlock.push(renderFeatureGroup(heroFeatures, { hero: true }));
+    modules.push(`<tr><td style="padding:24px 32px 0;">${heroBlock.join('')}</td></tr>`);
+  }
+
+  const pricingBlock = [];
+  pricingBlock.push(`<div style="${baseFontFamily}font-size:24px;font-weight:800;color:${headlineColor};margin:0 0 18px;">Inclusions &amp; pricing breakdown</div>`);
+  if (pricingTableMarkup) {
+    pricingBlock.push(pricingTableMarkup);
+  }
+  if (pricingBlock.length > 1) {
+    modules.push(`<tr><td style="padding:32px 32px 0;">${pricingBlock.join('')}</td></tr>`);
+  }
+
+  if (priceAmount) {
+    const priceParts = [];
+    priceParts.push('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;">');
+    priceParts.push('<tr><td>');
+    priceParts.push(`<div style="${baseFontFamily}background:${priceBackground};border:${priceBorderWidth} solid ${priceBorderColor};border-radius:${priceBorderRadius};padding:18px 20px;">`);
+    priceParts.push(`<div style="${baseFontFamily}font-size:14px;font-weight:600;color:${mutedTextColor};margin:0 0 6px;">${safe(priceLabel)}</div>`);
+    priceParts.push(`<div style="${baseFontFamily}font-size:30px;font-weight:800;color:${headlineColor};margin:0 0 6px;">${safe(priceAmount)}</div>`);
+    if (priceTerm) {
+      priceParts.push(`<div style="${baseFontFamily}font-size:14px;color:${mutedTextColor};margin:0;">${safe(priceTerm)}</div>`);
+    }
+    priceParts.push('</div>');
+    priceParts.push('</td></tr>');
+    priceParts.push('</table>');
+    modules.push(`<tr><td style="padding:28px 32px 0;">${priceParts.join('')}</td></tr>`);
+  }
+
+  if (terms.length) {
+    const termsBlock = [];
+    termsBlock.push(`<div style="${baseFontFamily}font-size:18px;font-weight:700;color:${headlineColor};margin:0 0 12px;">Commercial Terms &amp; Dependencies</div>`);
+    const termRows = terms.map((item) => `<tr><td style="${baseFontFamily}color:${baseTextColor};font-size:16px;line-height:1.6;padding:4px 0;">${safe(item)}</td></tr>`).join('');
+    termsBlock.push(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;">${termRows}</table>`);
+    modules.push(`<tr><td style="padding:28px 32px 0;">${termsBlock.join('')}</td></tr>`);
+  }
+
+  modules.push('<tr><td style="padding:32px 32px 36px;font-size:12px;line-height:1.4;text-align:center;color:#5B6573;">Prepared with the TBTC VIC EAST Proposal Studio.</td></tr>');
+
+  const docTitle = doc && doc.title ? safe(doc.title) : 'Proposal export';
+
+  const htmlParts = [];
+  htmlParts.push('<!doctype html>');
+  htmlParts.push('<html lang="en">');
+  htmlParts.push('<head>');
+  htmlParts.push('<meta charset="utf-8">');
+  htmlParts.push('<meta name="viewport" content="width=device-width,initial-scale=1">');
+  htmlParts.push(`<title>${docTitle}</title>`);
+  htmlParts.push(`<style type="text/css">@font-face{font-family:'TelstraText';font-style:normal;font-weight:400;font-display:swap;src:url(data:font/woff2;base64,${fontData}) format('woff2');}</style>`);
+  htmlParts.push('</head>');
+  htmlParts.push(`<body style="margin:0;padding:0;background:${backgroundColor};${baseFontFamily}color:${baseTextColor};">`);
+  htmlParts.push(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;background:${backgroundColor};">`);
+  htmlParts.push('<tr><td align="center" style="padding:32px 16px;">');
+  htmlParts.push(`<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;max-width:${contentWidth}px;border-collapse:separate;background:${panelBackground};border:1px solid ${panelBorderColor};border-radius:32px;overflow:hidden;">`);
+  htmlParts.push('<tbody>');
+  htmlParts.push(modules.join(''));
+  htmlParts.push('</tbody>');
+  htmlParts.push('</table>');
+  htmlParts.push('</td></tr>');
+  htmlParts.push('</table>');
+  htmlParts.push('</body>');
+  htmlParts.push('</html>');
+  return htmlParts.join('');
 }
 function initializeApp() {
   if (typeof document === 'undefined') {
@@ -825,7 +922,13 @@ function initializeApp() {
   const pvSummary = doc.getElementById('pvSummary');
   const pvBenefits = doc.getElementById('pvBenefits');
   const pvHero = doc.getElementById('pvHero');
+  if (pvHero) {
+    pvHero.setAttribute('data-export', 'headline-main');
+  }
   let pvSub = doc.getElementById('pvSub');
+  if (pvSub) {
+    pvSub.setAttribute('data-export', 'headline-sub');
+  }
   const pvMonthly = doc.getElementById('pvMonthly');
   const pvMonthlyGhost = doc.getElementById('pvMonthlyGhost');
   const pvTerm = doc.getElementById('pvTerm2');
@@ -846,6 +949,7 @@ function initializeApp() {
     pvSub.style.fontSize = '18px';
     pvSub.style.color = '#5B6573';
     pvSub.style.marginTop = '6px';
+    pvSub.setAttribute('data-export', 'headline-sub');
     pvHero.parentElement.appendChild(pvSub);
   }
 
@@ -1529,6 +1633,9 @@ function initializeApp() {
     const isHero = forceHero || Boolean(feature.hero);
     const card = doc.createElement('div');
     card.className = `feature${isHero ? ' hero' : ''}`;
+    card.setAttribute('data-export-feature', 'card');
+    card.setAttribute('data-export-feature-type', isHero ? 'hero' : 'standard');
+    card.setAttribute('data-export-feature-context', context);
     if (context === 'key') {
       card.classList.add('key-feature-card');
     }
@@ -1542,6 +1649,7 @@ function initializeApp() {
       const img = doc.createElement('img');
       img.src = iconSrc;
       img.alt = titleText || 'Feature icon';
+      img.setAttribute('data-export-feature-image', 'icon');
       iconWrap.appendChild(img);
       card.appendChild(iconWrap);
     }
@@ -1557,6 +1665,7 @@ function initializeApp() {
       title.style.fontWeight = '700';
       title.style.fontSize = '18px';
       title.style.marginBottom = '2px';
+      title.setAttribute('data-export-feature-title', 'title');
       title.textContent = titleText;
       body.appendChild(title);
     }
@@ -1565,11 +1674,13 @@ function initializeApp() {
       if (copyText.includes('\n')) {
         const list = doc.createElement('ul');
         list.innerHTML = bulletify(copyText);
+        list.setAttribute('data-export-feature-list', 'list');
         body.appendChild(list);
       } else {
         const copy = doc.createElement('div');
         copy.className = 'note';
         copy.style.fontSize = '16px';
+        copy.setAttribute('data-export-feature-copy', 'copy');
         copy.textContent = copyText;
         body.appendChild(copy);
       }
@@ -2355,27 +2466,36 @@ function initializeApp() {
   drawBanner();
 
   if (emailButton) {
-    emailButton.addEventListener('click', () => downloadEmailHTML());
+    emailButton.addEventListener('click', () => {
+      downloadEmailHTML();
+    });
   }
 }
 
-function downloadEmailHTML() {
+async function downloadEmailHTML() {
   if (typeof document === 'undefined') {
     return;
   }
-  const html = buildEmailHTML();
-  if (!html) {
-    return;
+  try {
+    const html = await buildEmailHTML();
+    if (!html) {
+      return;
+    }
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'proposal-email.html';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  } catch (error) {
+    // Surface errors for debugging but avoid breaking the UI flow.
+    if (typeof console !== 'undefined' && console.error) {
+      console.error('Failed to generate email export', error);
+    }
   }
-  const blob = new Blob([html], { type: 'text/html' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = 'proposal-email.html';
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 if (typeof module !== 'undefined' && module.exports) {
