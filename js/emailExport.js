@@ -26,18 +26,37 @@ function clampWidth(width) {
   return Math.min(Math.max(24, Math.round(width)), EMAIL_MAX_WIDTH);
 }
 
+const MIME_FALLBACK = 'image/png';
+
 function mimeFromExtOrBlob(url, blob) {
-  if (blob?.type && (blob.type === 'image/png' || blob.type === 'image/jpeg')) {
-    return blob.type;
+  if (blob?.type) {
+    if (blob.type.startsWith('image/')) {
+      return blob.type;
+    }
   }
-  const lower = url.split('?')[0].toLowerCase();
+  const lower = (url || '').split(/[?#]/)[0].toLowerCase();
+  if (!lower) {
+    return MIME_FALLBACK;
+  }
   if (lower.endsWith('.png')) {
     return 'image/png';
   }
   if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
     return 'image/jpeg';
   }
-  return 'image/png';
+  if (lower.endsWith('.gif')) {
+    return 'image/gif';
+  }
+  if (lower.endsWith('.svg')) {
+    return 'image/svg+xml';
+  }
+  if (lower.endsWith('.webp')) {
+    return 'image/webp';
+  }
+  if (lower.endsWith('.avif')) {
+    return 'image/avif';
+  }
+  return MIME_FALLBACK;
 }
 
 function toDataURLViaFileReader(blob, mimeHint) {
@@ -124,21 +143,46 @@ async function canvasToDataImg(canvas, warnings) {
 
 async function inlineBackgroundImage(el, warnings) {
   const computed = getComputedStyle(el);
-  const bg = computed.backgroundImage;
-  if (!bg || bg === 'none') {
+  const backgroundCandidates = [];
+  const inlineBg = el.style?.backgroundImage;
+  if (inlineBg && inlineBg !== 'none') {
+    backgroundCandidates.push(inlineBg);
+  }
+  const computedBg = computed.backgroundImage;
+  if (computedBg && computedBg !== 'none' && computedBg !== inlineBg) {
+    backgroundCandidates.push(computedBg);
+  }
+  if (!backgroundCandidates.length) {
     return;
   }
 
-  const matches = [...bg.matchAll(/url\((['"]?)(.*?)\1\)/g)].map((match) => match[2]).filter(Boolean);
-  if (!matches.length) {
+  const matchUrl = (value) => {
+    if (!value) {
+      return [];
+    }
+    return [...value.matchAll(/url\((['"]?)(.*?)\1\)/g)].map((match) => match[2]).filter(Boolean);
+  };
+
+  const urls = new Set();
+  for (const value of backgroundCandidates) {
+    for (const found of matchUrl(value)) {
+      if (!found || found.startsWith('data:')) {
+        continue;
+      }
+      urls.add(found);
+    }
+  }
+
+  if (!urls.size) {
     return;
   }
 
-  let nextBg = bg;
-  for (const url of matches) {
+  let nextBg = inlineBg && inlineBg !== 'none' ? inlineBg : backgroundCandidates[0];
+
+  for (const url of urls) {
     try {
       const { dataUri } = await fetchAsDataURL(url);
-      nextBg = nextBg.replace(url, dataUri);
+      nextBg = nextBg.split(url).join(dataUri);
     } catch (error) {
       warnings.push(`BG image inline failed: ${url} — ${error?.message || error}`);
     }
@@ -174,6 +218,9 @@ async function inlineAllRasterImages(root, warnings) {
     const res = await imgElementToDataURI(image, warnings);
     if (res) {
       image.src = res.dataUri;
+      if (image.srcset) {
+        image.removeAttribute('srcset');
+      }
       setExplicitDimensions(image);
     } else {
       setExplicitDimensions(image);
