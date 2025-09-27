@@ -148,6 +148,20 @@ const LOGO_ALIASES = {
   'Primary on Coral (White T)': 'Primary on Coral (White T)'
 };
 
+const ICON_SIZE_MIN = 40;
+const ICON_SIZE_MAX = 160;
+const HERO_ICON_SIZE_MAX = 220;
+
+function clampIconSizeValue(value, heroMode) {
+  const numeric = Number(value);
+  const fallback = heroMode ? 96 : 56;
+  if (!Number.isFinite(numeric)) {
+    return fallback;
+  }
+  const upper = heroMode ? HERO_ICON_SIZE_MAX : ICON_SIZE_MAX;
+  return Math.max(ICON_SIZE_MIN, Math.min(upper, numeric));
+}
+
 const logoAspectCache = new Map();
 
 const FEATURE_LIBRARY = [
@@ -444,10 +458,12 @@ function buildEmailHTML() {
     const image = String(card.img ?? card.image ?? '').trim();
     const hero = Boolean(card.hero);
     const size = parseSizeValue(card.size ?? card.dimensions ?? card.imgSize ?? '', defaults[0], defaults[1]);
+    const baseSize = Number(card.size) || size[0];
+    const iconSize = clampIconSizeValue(baseSize, hero);
     if (!title && !copy && !image) {
       return null;
     }
-    return { title, copy, image, width: size[0], height: size[1], hero };
+    return { title, copy, image, width: size[0], height: size[1], hero, iconSize };
   };
 
   const readJSON = (key) => {
@@ -648,9 +664,12 @@ function buildEmailHTML() {
   const heroHighlights = readHeroCards().map((card) => Object.assign({}, card, { hero: true }));
   const featureCards = readFeatures();
   const allFeatures = heroHighlights.concat(featureCards);
+  const heroFeatures = allFeatures.filter((feature) => feature.hero);
+  const standardFeatures = allFeatures.filter((feature) => !feature.hero);
+  const hasStandardFeatures = standardFeatures.length > 0;
   const priceRows = readPriceRows();
   const featuresHeader = readFeaturesHeader();
-  const hasHeroFeature = allFeatures.some((feature) => feature.hero);
+  const hasHeroFeature = heroFeatures.length > 0;
   const pillTextColor = resolvePillTextColor(panelColor);
 
   const renderFeatureCopy = (text) => {
@@ -666,12 +685,21 @@ function buildEmailHTML() {
     return `<div style="margin:0;font-size:15px;line-height:1.6;color:#2C3440;">${escapeHTML(text)}</div>`;
   };
 
-  const renderFeatureCard = (feature) => {
+  const renderFeatureCard = (feature, options = {}) => {
     if (!feature) {
       return '';
     }
-    const { title, copy, image, hero, height } = feature;
+    const { forceHero = false, badgeText = '' } = options;
+    const { title, copy, image } = feature;
+    const hero = forceHero || Boolean(feature.hero);
+    const iconSize = clampIconSizeValue(feature.iconSize ?? feature.height ?? 80, hero);
     const bodyParts = [];
+    const badgeMarkup = badgeText
+      ? `<span style="display:inline-block;padding:4px 10px;border-radius:999px;background:#EEF2FF;color:#122B5C;font-weight:700;font-size:11px;letter-spacing:0.08em;text-transform:uppercase;">${escapeHTML(badgeText)}</span>`
+      : '';
+    if (badgeMarkup) {
+      bodyParts.push(`<div style="margin:0 0 8px;">${badgeMarkup}</div>`);
+    }
     if (title) {
       bodyParts.push(`<div style="font-size:18px;font-weight:700;margin:0 0 8px;color:#0B1220;">${escapeHTML(title)}</div>`);
     }
@@ -680,20 +708,37 @@ function buildEmailHTML() {
       bodyParts.push(copyMarkup);
     }
 
+    if (!bodyParts.length && !image) {
+      return '';
+    }
+
     const cardParts = [];
     cardParts.push('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;">');
-    if (hero && image) {
-      const safeHeight = Number.isFinite(Number(height)) ? Number(height) : 200;
-      cardParts.push(`<tr><td style="padding:0 0 16px;" colspan="2"><img src="${escapeHTML(image)}" alt="${escapeHTML(title || 'Feature image')}" style="display:block;width:100%;height:auto;max-height:${Math.max(180, safeHeight)}px;border-radius:16px;object-fit:cover;"></td></tr>`);
+
+    let heroImageRendered = false;
+    if (hero && image && Math.max(Number(feature.width) || 0, Number(feature.height) || 0) > 200) {
+      const heroHeight = Math.max(140, clampIconSizeValue(feature.iconSize ?? feature.height ?? 220, true));
+      cardParts.push(`<tr><td style="padding:0 0 16px;" colspan="2"><img src="${escapeHTML(image)}" alt="${escapeHTML(title || 'Feature image')}" style="display:block;width:100%;height:auto;max-height:${heroHeight}px;border-radius:18px;object-fit:cover;"></td></tr>`);
+      heroImageRendered = true;
     }
+
     if (hero) {
-      cardParts.push(`<tr><td style="padding:0;" colspan="2">${bodyParts.join('')}</td></tr>`);
+      const heroContent = [];
+      if (!heroImageRendered && image) {
+        heroContent.push(`<div style="margin:0 0 16px;"><img src="${escapeHTML(image)}" alt="${escapeHTML(title || 'Feature icon')}" style="display:block;width:100%;height:auto;max-height:${iconSize}px;object-fit:contain;"></div>`);
+      }
+      if (bodyParts.length) {
+        heroContent.push(bodyParts.join(''));
+      }
+      if (heroContent.length) {
+        cardParts.push(`<tr><td style="padding:0;" colspan="2">${heroContent.join('')}</td></tr>`);
+      }
     } else {
       const iconCell = image
-        ? `<img src="${escapeHTML(image)}" alt="${escapeHTML(title || 'Feature icon')}" style="display:block;width:100%;height:auto;max-height:${Math.max(56, Math.min(180, Number(height) || 80))}px;">`
+        ? `<img src="${escapeHTML(image)}" alt="${escapeHTML(title || 'Feature icon')}" style="display:block;width:100%;height:auto;max-height:${iconSize}px;">`
         : '&nbsp;';
       cardParts.push('<tr>');
-      cardParts.push(`<td style="width:72px;padding:0 16px 0 0;vertical-align:top;">${iconCell}</td>`);
+      cardParts.push(`<td style="width:80px;padding:0 16px 0 0;vertical-align:top;">${iconCell}</td>`);
       cardParts.push(`<td style="vertical-align:top;">${bodyParts.join('')}</td>`);
       cardParts.push('</tr>');
     }
@@ -702,15 +747,16 @@ function buildEmailHTML() {
     return `<div style="border:1px solid #D7DBE7;border-radius:18px;padding:20px;background:#FFFFFF;">${cardParts.join('')}</div>`;
   };
 
-  const renderFeatureGrid = (features) => {
+  const renderFeatureGrid = (features, options = {}) => {
     if (!features.length) {
       return '';
     }
+    const { heroBadge = '' } = options;
     const rows = [];
     const standardFeatures = [];
     for (const feature of features) {
       if (feature.hero) {
-        rows.push(`<tr><td colspan="2" style="padding:0 0 16px;">${renderFeatureCard(feature)}</td></tr>`);
+        rows.push(`<tr><td colspan="2" style="padding:0 0 16px;">${renderFeatureCard(feature, { forceHero: true, badgeText: heroBadge })}</td></tr>`);
       } else {
         standardFeatures.push(feature);
       }
@@ -724,9 +770,17 @@ function buildEmailHTML() {
     return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;">${rows.join('')}</table>`;
   };
 
+  const renderKeyFeatureStack = (features) => {
+    if (!features.length) {
+      return '';
+    }
+    const rows = features.map((feature) => `<tr><td style="padding:0 0 16px;">${renderFeatureCard(feature, { forceHero: true, badgeText: 'Key feature' })}</td></tr>`);
+    return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;">${rows.join('')}</table>`;
+  };
+
   const hasSummary = Boolean(summary);
   const hasBenefits = Boolean(benefitsList);
-  const hasFeatures = allFeatures.length > 0;
+  const hasFeatures = hasHeroFeature || hasStandardFeatures;
   const hasPricingSummary = Boolean(term) || Boolean(monthlyDetails.amount);
   const hasAssumptions = assumptions.length > 0;
 
@@ -806,7 +860,7 @@ function buildEmailHTML() {
     if (legendText) {
       out.push(legendText);
     }
-    out.push(`<div style="margin-top:20px;">${renderFeatureGrid(allFeatures)}</div>`);
+    out.push(`<div style="margin-top:20px;">${renderFeatureGrid(allFeatures, { heroBadge: hasHeroFeature ? 'Key feature' : '' })}</div>`);
     out.push('</div>');
   }
 
@@ -844,6 +898,13 @@ function buildEmailHTML() {
       }
       out.push('</tbody></table>');
     }
+    out.push('</div>');
+  }
+
+  if (heroFeatures.length) {
+    out.push('<div style="margin:0 0 32px;padding-top:8px;border-top:1px solid #E5E6EA;">');
+    out.push('<div style="font-size:22px;font-weight:800;margin:24px 0 12px;">Key features</div>');
+    out.push(`<div style="margin-top:16px;">${renderKeyFeatureStack(heroFeatures)}</div>`);
     out.push('</div>');
   }
 
@@ -1369,81 +1430,170 @@ function initializeApp() {
     }
   };
 
+  const keyFeaturesSection = doc.getElementById('keyFeaturesSection');
+  const keyFeaturesList = doc.getElementById('keyFeaturesList');
+
+  const buildFeatureCardElement = (feature, options = {}) => {
+    if (!feature) {
+      return null;
+    }
+    const { forceHero = false, context = 'preview', badgeText = '' } = options;
+    const titleText = feature.t ? String(feature.t).trim() : '';
+    const copyText = feature.c ? String(feature.c).trim() : '';
+    const iconSrc = feature.img || resolveIcon(feature.icon);
+    const hasDetails = Boolean(titleText || copyText || iconSrc);
+    if (!hasDetails) {
+      return null;
+    }
+
+    const isHero = forceHero || Boolean(feature.hero);
+    const card = doc.createElement('div');
+    card.className = `feature${isHero ? ' hero' : ''}`;
+    if (context === 'key') {
+      card.classList.add('key-feature-card');
+    }
+
+    if (iconSrc) {
+      const iconWrap = doc.createElement('div');
+      iconWrap.className = 'icon';
+      const sizeValue = clampIconSizeValue(feature.size, isHero);
+      iconWrap.style.width = `${sizeValue}px`;
+      iconWrap.style.height = `${sizeValue}px`;
+      const img = doc.createElement('img');
+      img.src = iconSrc;
+      img.alt = titleText || 'Feature icon';
+      iconWrap.appendChild(img);
+      card.appendChild(iconWrap);
+    }
+
+    const body = doc.createElement('div');
+    body.style.display = 'flex';
+    body.style.flexDirection = 'column';
+    body.style.gap = '4px';
+    body.style.minWidth = '0';
+
+    if (badgeText) {
+      const badge = doc.createElement('span');
+      badge.className = 'feature-badge note';
+      badge.textContent = badgeText;
+      body.appendChild(badge);
+    }
+
+    if (titleText) {
+      const title = doc.createElement('div');
+      title.style.fontWeight = '700';
+      title.style.fontSize = '18px';
+      title.style.marginBottom = '2px';
+      title.textContent = titleText;
+      body.appendChild(title);
+    }
+
+    if (copyText) {
+      if (copyText.includes('\n')) {
+        const list = doc.createElement('ul');
+        list.innerHTML = bulletify(copyText);
+        body.appendChild(list);
+      } else {
+        const copy = doc.createElement('div');
+        copy.className = 'note';
+        copy.style.fontSize = '16px';
+        copy.textContent = copyText;
+        body.appendChild(copy);
+      }
+    }
+
+    if (!card.firstChild) {
+      // Ensure layout remains consistent when there is no icon
+      const spacer = doc.createElement('div');
+      spacer.className = 'icon';
+      const spacerSize = clampIconSizeValue(feature.size, isHero);
+      spacer.style.width = `${spacerSize}px`;
+      spacer.style.height = `${spacerSize}px`;
+      spacer.style.display = 'none';
+      card.appendChild(spacer);
+    }
+
+    card.appendChild(body);
+    return card;
+  };
+
   const renderFeaturePreview = () => {
     if (!featurePreview) {
       return;
     }
-    featurePreview.innerHTML = "";
-    let heroCount = 0;
-    let hasContent = false;
+
+    featurePreview.innerHTML = '';
+    const heroFeatures = [];
+    const regularFeatures = [];
+
     for (const feature of state.features) {
       if (!feature) {
         continue;
       }
-      const titleText = feature.t ? String(feature.t).trim() : "";
-      const copyText = feature.c ? String(feature.c).trim() : "";
-      const hasDetails = titleText || copyText;
-      const iconSrc = feature.img || resolveIcon(feature.icon);
-      if (!hasDetails && !iconSrc) {
+      const element = buildFeatureCardElement(feature);
+      if (!element) {
         continue;
       }
-      hasContent = true;
-      const card = doc.createElement('div');
-      card.className = `feature${feature.hero ? " hero" : ""}`;
-
-      const iconWrap = doc.createElement('div');
-      iconWrap.className = "icon";
-      const size = Number(feature.size) || 56;
-      iconWrap.style.width = `${size}px`;
-      iconWrap.style.height = `${size}px`;
-      const img = doc.createElement('img');
-      img.src = iconSrc;
-      iconWrap.appendChild(img);
-      card.appendChild(iconWrap);
-
-      const body = doc.createElement('div');
-      body.style.display = "flex";
-      body.style.flexDirection = "column";
-      body.style.gap = "4px";
-      body.style.minWidth = "0";
-
       if (feature.hero) {
-        heroCount += 1;
+        heroFeatures.push({ feature, element });
+      } else {
+        regularFeatures.push({ feature, element });
       }
+    }
 
-      if (titleText) {
-        const title = doc.createElement('div');
-        title.style.fontWeight = "700";
-        title.style.fontSize = "18px";
-        title.style.marginBottom = "2px";
-        title.textContent = titleText;
-        body.appendChild(title);
-      }
-      if (copyText) {
-        if (copyText.includes('\n')) {
-          const list = doc.createElement('ul');
-          list.innerHTML = bulletify(copyText);
-          body.appendChild(list);
-        } else {
-          const copy = doc.createElement('div');
-          copy.className = "note";
-          copy.style.fontSize = "16px";
-          copy.textContent = copyText;
-          body.appendChild(copy);
-        }
-      }
+    let hasContent = false;
 
-      card.appendChild(body);
-      featurePreview.appendChild(card);
+    if (heroFeatures.length) {
+      const groupHeading = doc.createElement('div');
+      groupHeading.className = 'feature-group-heading';
+      groupHeading.textContent = 'Key features';
+      featurePreview.appendChild(groupHeading);
+      for (const { feature, element } of heroFeatures) {
+        const cloned = buildFeatureCardElement(feature, { badgeText: 'Key feature' }) || element;
+        featurePreview.appendChild(cloned);
+      }
+      hasContent = true;
+    }
+
+    if (regularFeatures.length) {
+      if (heroFeatures.length) {
+        const supportingHeading = doc.createElement('div');
+        supportingHeading.className = 'feature-group-heading secondary';
+        supportingHeading.textContent = 'Supporting features';
+        featurePreview.appendChild(supportingHeading);
+      }
+      for (const { element } of regularFeatures) {
+        featurePreview.appendChild(element);
+      }
+      hasContent = true;
+    }
+
+    if (!heroFeatures.length && !regularFeatures.length) {
+      hasContent = false;
     }
 
     if (featuresPreviewLayout) {
       if (hasContent) {
-        featuresPreviewLayout.style.display = "";
-        featuresPreviewLayout.classList.toggle('has-hero', heroCount > 0);
+        featuresPreviewLayout.style.display = '';
+        featuresPreviewLayout.classList.toggle('has-hero', heroFeatures.length > 0);
       } else {
-        featuresPreviewLayout.style.display = "none";
+        featuresPreviewLayout.style.display = 'none';
         featuresPreviewLayout.classList.remove('has-hero');
+      }
+    }
+
+    if (keyFeaturesSection && keyFeaturesList) {
+      keyFeaturesList.innerHTML = '';
+      if (heroFeatures.length) {
+        keyFeaturesSection.style.display = '';
+        for (const { feature } of heroFeatures) {
+          const card = buildFeatureCardElement(feature, { forceHero: true, context: 'key', badgeText: 'Key feature' });
+          if (card) {
+            keyFeaturesList.appendChild(card);
+          }
+        }
+      } else {
+        keyFeaturesSection.style.display = 'none';
       }
     }
   };
@@ -1504,17 +1654,13 @@ function initializeApp() {
     }
     if (!iconGalleryBuilt) {
       const entries = Object.entries(iconMap)
- codex/display-all-pictograms-in-modal-73ed4x
-        .filter(([rawName, src]) => {
-          if (typeof rawName !== 'string' || typeof src !== 'string') {
+        .filter(([rawName, rawSrc]) => {
+          if (typeof rawName !== 'string' || typeof rawSrc !== 'string') {
             return false;
           }
           const name = rawName.trim();
-          if (!name) {
-            return false;
-          }
-          const value = src.trim();
-          if (!value) {
+          const value = rawSrc.trim();
+          if (!name || !value) {
             return false;
           }
           if (/^data:image\//i.test(value)) {
@@ -1524,13 +1670,6 @@ function initializeApp() {
             return true;
           }
           return /\.(png|jpe?g|gif|webp|svg)$/i.test(name);
-
-        .filter(([name, src]) => {
-          if (typeof name !== 'string' || !src) {
-            return false;
-          }
-          return /\.(png|jpe?g)$/i.test(name);
- main
         })
         .sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: 'base' }));
       iconGallery.innerHTML = "";
@@ -1603,7 +1742,7 @@ function initializeApp() {
 
       const iconWrap = doc.createElement('div');
       iconWrap.className = "icon";
-      const size = Number(feature.size) || 56;
+      const size = clampIconSizeValue(feature.size, feature.hero);
       iconWrap.style.width = `${size}px`;
       iconWrap.style.height = `${size}px`;
       const img = doc.createElement('img');
@@ -1686,31 +1825,50 @@ function initializeApp() {
       const heroToggle = doc.createElement('input');
       heroToggle.type = "checkbox";
       heroToggle.checked = Boolean(feature.hero);
-      heroToggle.addEventListener('change', (event) => {
-        feature.hero = Boolean(event.target.checked);
-        renderFeatureGrid();
-        renderFeaturePreview();
-      });
       heroLabel.appendChild(heroToggle);
-      heroLabel.appendChild(doc.createTextNode('Hero (span columns)'));
+      heroLabel.appendChild(doc.createTextNode('Key feature (hero layout)'));
 
       const sizeWrap = doc.createElement('div');
       const sizeLabel = doc.createElement('label');
       sizeLabel.className = "note";
-      sizeLabel.textContent = "Icon size";
       const sizeInput = doc.createElement('input');
       sizeInput.type = "range";
-      sizeInput.min = "40";
-      sizeInput.max = "120";
+      sizeInput.min = String(ICON_SIZE_MIN);
       sizeInput.step = "1";
-      sizeInput.value = Number(feature.size) || 56;
+
+      const updateIconSizeLabel = () => {
+        sizeLabel.textContent = `Icon size (${sizeInput.value}px)`;
+      };
+
+      const applyHeroSizeBounds = () => {
+        const max = heroToggle.checked ? HERO_ICON_SIZE_MAX : ICON_SIZE_MAX;
+        sizeInput.max = String(max);
+        const clamped = clampIconSizeValue(sizeInput.value, heroToggle.checked);
+        sizeInput.value = String(clamped);
+        feature.size = clamped;
+        updateIconSizeLabel();
+      };
+
       sizeInput.addEventListener('input', (event) => {
-        feature.size = Number(event.target.value) || 56;
+        const clamped = clampIconSizeValue(event.target.value, heroToggle.checked);
+        feature.size = clamped;
+        sizeInput.value = String(clamped);
+        updateIconSizeLabel();
         renderFeatureGrid();
         renderFeaturePreview();
       });
+
+      heroToggle.addEventListener('change', (event) => {
+        feature.hero = Boolean(event.target.checked);
+        applyHeroSizeBounds();
+        renderFeatureGrid();
+        renderFeaturePreview();
+      });
+
       sizeWrap.appendChild(sizeLabel);
       sizeWrap.appendChild(sizeInput);
+      sizeInput.value = String(feature.size != null ? feature.size : (heroToggle.checked ? 96 : 56));
+      applyHeroSizeBounds();
 
       const removeBtn = doc.createElement('button');
       removeBtn.type = "button";
@@ -2156,6 +2314,22 @@ function downloadEmailHTML() {
   link.click();
   document.body.removeChild(link);
   setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    parseSize,
+    esc,
+    wrapTextLines,
+    bulletify,
+    __rgbToHex__px,
+    buildEmailHTML,
+    initializeApp,
+    state,
+    PRESETS,
+    FEATURE_LIBRARY,
+    DEFAULT_PRICING_ITEMS,
+  };
 }
 
 (function attachHandlers() {

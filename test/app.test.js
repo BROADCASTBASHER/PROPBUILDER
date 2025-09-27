@@ -1,50 +1,26 @@
-const fs = require('node:fs');
-const path = require('node:path');
 const test = require('node:test');
 const assert = require('node:assert');
 
-const APP_JS_PATH = path.join(__dirname, '..', 'js', 'app.js');
-const SOURCE = fs.readFileSync(APP_JS_PATH, 'utf8');
+const {
+  parseSize,
+  wrapTextLines,
+  esc,
+  bulletify,
+  __rgbToHex__px: rgbToHex,
+  buildEmailHTML,
+  initializeApp,
+  state: appState,
+  PRESETS,
+  FEATURE_LIBRARY,
+  DEFAULT_PRICING_ITEMS,
+} = require('../js/app.js');
 
-function loadFunction(name, dependencies = {}) {
-  const search = `function ${name}`;
-  const start = SOURCE.indexOf(search);
-  if (start === -1) {
-    throw new Error(`Function ${name} not found`);
+const clone = (value) => {
+  if (typeof structuredClone === 'function') {
+    return structuredClone(value);
   }
-  let index = SOURCE.indexOf('{', start);
-  if (index === -1) {
-    throw new Error(`Function ${name} has no body`);
-  }
-  let depth = 0;
-  let end = -1;
-  for (let i = index; i < SOURCE.length; i += 1) {
-    const char = SOURCE[i];
-    if (char === '{') {
-      depth += 1;
-    } else if (char === '}') {
-      depth -= 1;
-      if (depth === 0) {
-        end = i;
-        break;
-      }
-    }
-  }
-  if (end === -1) {
-    throw new Error(`Function ${name} body not terminated`);
-  }
-  const fnStr = SOURCE.slice(start, end + 1);
-  const factory = new Function(...Object.keys(dependencies), `return (${fnStr});`);
-  return factory(...Object.values(dependencies));
-}
-
-const parseSize = loadFunction('parseSize');
-const wrapTextLines = loadFunction('wrapTextLines');
-const esc = loadFunction('esc');
-const bulletify = loadFunction('bulletify', { esc });
-const rgbToHex = loadFunction('__rgbToHex__px');
-const buildEmailHTML = loadFunction('buildEmailHTML');
-const initializeApp = loadFunction('initializeApp');
+  return JSON.parse(JSON.stringify(value));
+};
 
 function createElement(overrides = {}) {
   const element = { style: {}, dataset: {}, children: [], _listeners: {}, className: '' };
@@ -215,6 +191,9 @@ function withDocumentEnvironment(setup, fn) {
     createElement(tag) {
       return createElement({ tagName: tag.toUpperCase() });
     },
+    createTextNode(text) {
+      return createElement({ textContent: String(text ?? '') });
+    },
     addEventListener() {},
     removeEventListener() {}
   };
@@ -222,27 +201,20 @@ function withDocumentEnvironment(setup, fn) {
   const previous = {
     document: global.document,
     window: global.window,
-    state: global.state,
-    PRESETS: global.PRESETS,
     localStorage: global.localStorage,
     getComputedStyle: global.getComputedStyle,
-    DEFAULT_PRICING_ITEMS: global.DEFAULT_PRICING_ITEMS,
-    DEFAULT_DOC_TYPE: global.DEFAULT_DOC_TYPE,
-    DEFAULT_GST_MODE: global.DEFAULT_GST_MODE,
-    DEFAULT_MONTHLY: global.DEFAULT_MONTHLY,
-    DEFAULT_TERM: global.DEFAULT_TERM,
-    DEFAULT_BANNER_TEXT: global.DEFAULT_BANNER_TEXT,
-    FEATURE_LIBRARY: global.FEATURE_LIBRARY,
-    esc: global.esc,
   };
+
+  const stateSnapshot = clone(appState);
+  const presetsSnapshot = clone(PRESETS);
+  const featureLibrarySnapshot = clone(FEATURE_LIBRARY);
+  const defaultPricingSnapshot = clone(DEFAULT_PRICING_ITEMS);
 
   const storage = new Map();
   storage.set('heroCards', JSON.stringify(heroCards));
 
   global.document = documentStub;
   global.window = Object.assign({ _features: features }, setup.windowOverrides || {});
-  global.state = state;
-  global.PRESETS = presets;
   global.localStorage = {
     getItem(key) {
       return storage.has(key) ? storage.get(key) : null;
@@ -256,32 +228,71 @@ function withDocumentEnvironment(setup, fn) {
   };
   global.getComputedStyle = (el) => ({ backgroundColor: (el && el.style && el.style.backgroundColor) || priceCardColor });
   const defaults = setup.defaults || {};
-  global.DEFAULT_PRICING_ITEMS = defaults.DEFAULT_PRICING_ITEMS ?? [];
-  global.DEFAULT_DOC_TYPE = defaults.DEFAULT_DOC_TYPE ?? 'two';
-  global.DEFAULT_GST_MODE = defaults.DEFAULT_GST_MODE ?? 'ex';
-  global.DEFAULT_MONTHLY = defaults.DEFAULT_MONTHLY ?? 0;
-  global.DEFAULT_TERM = defaults.DEFAULT_TERM ?? 0;
-  global.DEFAULT_BANNER_TEXT = defaults.DEFAULT_BANNER_TEXT ?? '';
-  global.FEATURE_LIBRARY = setup.featureLibrary || [];
-  global.esc = esc;
+
+  // reset shared state
+  appState.preset = state.preset ?? stateSnapshot.preset;
+  appState.banner = Object.assign({}, stateSnapshot.banner, state.banner || {});
+  appState.docType = state.docType ?? stateSnapshot.docType;
+  appState.features = Array.isArray(state.features) ? clone(state.features) : [];
+  const pricingOverride = state.pricing || {};
+  appState.pricing = Object.assign({}, stateSnapshot.pricing, pricingOverride);
+  if (!Array.isArray(appState.pricing.items)) {
+    appState.pricing.items = [];
+  }
+
+  if (defaults.DEFAULT_DOC_TYPE !== undefined) {
+    appState.docType = defaults.DEFAULT_DOC_TYPE;
+  }
+  if (defaults.DEFAULT_GST_MODE !== undefined) {
+    appState.pricing.gst = defaults.DEFAULT_GST_MODE;
+  }
+  if (defaults.DEFAULT_MONTHLY !== undefined) {
+    appState.pricing.monthly = defaults.DEFAULT_MONTHLY;
+  }
+  if (defaults.DEFAULT_TERM !== undefined) {
+    appState.pricing.term = defaults.DEFAULT_TERM;
+  }
+  if (defaults.DEFAULT_BANNER_TEXT !== undefined) {
+    appState.banner.text = defaults.DEFAULT_BANNER_TEXT;
+  }
+
+  DEFAULT_PRICING_ITEMS.length = 0;
+  const pricingDefaults = defaults.DEFAULT_PRICING_ITEMS ?? defaultPricingSnapshot;
+  DEFAULT_PRICING_ITEMS.push(...clone(pricingDefaults));
+
+  FEATURE_LIBRARY.length = 0;
+  if (setup.featureLibrary) {
+    FEATURE_LIBRARY.push(...clone(setup.featureLibrary));
+  }
+
+  Object.keys(PRESETS).forEach((key) => { delete PRESETS[key]; });
+  Object.entries(presetsSnapshot).forEach(([key, value]) => {
+    PRESETS[key] = clone(value);
+  });
+  Object.entries(presets || {}).forEach(([key, value]) => {
+    PRESETS[key] = Object.assign({}, PRESETS[key] || {}, value);
+  });
 
   try {
     return fn();
   } finally {
     global.document = previous.document;
     global.window = previous.window;
-    global.state = previous.state;
-    global.PRESETS = previous.PRESETS;
     global.localStorage = previous.localStorage;
     global.getComputedStyle = previous.getComputedStyle;
-    global.DEFAULT_PRICING_ITEMS = previous.DEFAULT_PRICING_ITEMS;
-    global.DEFAULT_DOC_TYPE = previous.DEFAULT_DOC_TYPE;
-    global.DEFAULT_GST_MODE = previous.DEFAULT_GST_MODE;
-    global.DEFAULT_MONTHLY = previous.DEFAULT_MONTHLY;
-    global.DEFAULT_TERM = previous.DEFAULT_TERM;
-    global.DEFAULT_BANNER_TEXT = previous.DEFAULT_BANNER_TEXT;
-    global.FEATURE_LIBRARY = previous.FEATURE_LIBRARY;
-    global.esc = previous.esc;
+    appState.preset = stateSnapshot.preset;
+    appState.banner = stateSnapshot.banner;
+    appState.docType = stateSnapshot.docType;
+    appState.features = stateSnapshot.features;
+    appState.pricing = stateSnapshot.pricing;
+    DEFAULT_PRICING_ITEMS.length = 0;
+    DEFAULT_PRICING_ITEMS.push(...defaultPricingSnapshot);
+    FEATURE_LIBRARY.length = 0;
+    FEATURE_LIBRARY.push(...featureLibrarySnapshot);
+    Object.keys(PRESETS).forEach((key) => { delete PRESETS[key]; });
+    Object.entries(presetsSnapshot).forEach(([key, value]) => {
+      PRESETS[key] = clone(value);
+    });
   }
 }
 
@@ -415,7 +426,7 @@ test('initializeApp renders pricing rows and updates previews', () => {
     priceInput.value = '200';
     priceInput.dispatchEvent({ type: 'input', target: priceInput });
 
-    assert.strictEqual(baseState.pricing.items[0].price, 200);
+    assert.strictEqual(appState.pricing.items[0].price, 200);
     assert.strictEqual(priceTableBody.innerHTML.includes('A$400.00'), true);
 
     gstSelect.value = 'inc';
@@ -427,16 +438,118 @@ test('initializeApp renders pricing rows and updates previews', () => {
     const removeBtn = row.children[4];
     removeBtn.click();
 
-    assert.strictEqual(baseState.pricing.items.length, 0);
+    assert.strictEqual(appState.pricing.items.length, 0);
     assert.strictEqual(itemsContainer.children.length, 0);
     assert.strictEqual(priceTableBody.innerHTML.includes('Add line items'), true);
   });
 });
 
 test('initializeApp populates icon gallery with all bundled pictograms', () => {
-  const iconGallery = createElement();
-  const iconStatus = createElement();
-  const iconSearch = createElement({ value: '' });
+  const buildState = () => ({
+    preset: 'navy',
+    banner: {
+      text: 'Banner',
+      bold: false,
+      textSize: 1,
+      layout: 'left',
+      size: '1000x300',
+      logoMode: 'auto',
+      scale: 1,
+      offsetX: 0,
+      offsetY: 0,
+      fit: 'contain'
+    },
+    docType: 'two',
+    features: [],
+    pricing: {
+      gst: 'ex',
+      items: [],
+      monthly: 0,
+      term: 12
+    }
+  });
+
+  const defaults = {
+    DEFAULT_PRICING_ITEMS: [],
+    DEFAULT_DOC_TYPE: 'two',
+    DEFAULT_GST_MODE: 'ex',
+    DEFAULT_MONTHLY: 0,
+    DEFAULT_TERM: 12,
+    DEFAULT_BANNER_TEXT: 'Banner'
+  };
+
+  const fullIconGallery = createElement();
+  const fullIconStatus = createElement();
+  const fullIconSearch = createElement({ value: '' });
+
+  const iconData = {};
+  for (let i = 1; i <= 112; i += 1) {
+    iconData[`picto-${i}.png`] = `data:image/png;base64,${i}`;
+  }
+  iconData['brandHero'] = 'data:image/png;base64,hero';
+  iconData['photoAsset.JPG'] = 'data:image/jpeg;base64,photo';
+  const expectedTitles = Object.keys(iconData).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+
+  withDocumentEnvironment({
+    ids: {
+      iconGallery: fullIconGallery,
+      iconGalleryStatus: fullIconStatus,
+      iconSearch: fullIconSearch,
+      iconModal: createElement()
+    },
+    selectors: {},
+    state: buildState(),
+    defaults,
+    featureLibrary: [],
+    windowOverrides: {
+      __LOGO_DATA__: {},
+      __ICON_DATA__: iconData
+    }
+  }, () => {
+    initializeApp();
+    fullIconSearch.dispatchEvent({ type: 'input', target: fullIconSearch });
+    assert.strictEqual(fullIconGallery.children.length, expectedTitles.length);
+    const titles = fullIconGallery.children.map((child) => child.title).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    assert.deepStrictEqual(titles, expectedTitles);
+    assert.strictEqual(fullIconStatus.textContent, `${expectedTitles.length} pictograms available.`);
+  });
+
+  const filteredGallery = createElement();
+  const filteredStatus = createElement();
+  const filteredSearch = createElement({ value: '' });
+
+  withDocumentEnvironment({
+    ids: {
+      iconGallery: filteredGallery,
+      iconGalleryStatus: filteredStatus,
+      iconSearch: filteredSearch,
+      iconModal: createElement()
+    },
+    selectors: {},
+    state: buildState(),
+    defaults,
+    featureLibrary: [],
+    windowOverrides: {
+      __LOGO_DATA__: {},
+      __ICON_DATA__: {
+        'alpha.png': 'data:image/png;base64,AAA=',
+        'beta.jpg': 'data:image/jpeg;base64,BBB='
+      }
+    }
+  }, () => {
+    initializeApp();
+    filteredSearch.dispatchEvent({ type: 'input', target: filteredSearch });
+    assert.strictEqual(filteredGallery.children.length, 2);
+    const titles = filteredGallery.children.map((child) => child.title).sort();
+    assert.deepStrictEqual(titles, ['alpha.png', 'beta.jpg']);
+    assert.strictEqual(filteredStatus.textContent, '2 pictograms available.');
+  });
+});
+
+test('feature icon sliders show px labels and hero range', () => {
+  const featureGrid = createElement();
+  const featuresPreview = createElement();
+  const featuresView = createElement();
 
   const baseState = {
     preset: 'navy',
@@ -462,27 +575,37 @@ test('initializeApp populates icon gallery with all bundled pictograms', () => {
     }
   };
 
- codex/display-all-pictograms-in-modal-73ed4x
-  const iconData = {};
-  for (let i = 1; i <= 112; i += 1) {
-    iconData[`picto-${i}.png`] = `data:image/png;base64,${i}`;
-  }
-  iconData['brandHero'] = 'data:image/png;base64,hero';
-  iconData['photoAsset.JPG'] = 'data:image/jpeg;base64,photo';
-
-  const expectedTitles = Object.keys(iconData).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-
-
- main
   withDocumentEnvironment({
     ids: {
-      iconGallery,
-      iconGalleryStatus: iconStatus,
-      iconSearch,
-      iconModal: createElement()
+      featureGrid,
+      featuresPreview,
+      featuresView,
+      btnAddFeat: createElement(),
+      iconModal: createElement(),
+      iconGallery: createElement(),
+      iconGalleryStatus: createElement(),
+      iconSearch: createElement({ value: '' }),
+      iconUpload: createElement(),
+      closeIcon: createElement(),
+      items: createElement(),
+      btnAddItem: createElement(),
+      gstMode: createElement({ value: 'ex' }),
+      monthly: createElement({ value: '0' }),
+      term: createElement({ value: '12' }),
+      docType: createElement({ value: 'two' }),
+      thPrice: createElement(),
+      thPriceGhost: createElement(),
+      thPriceV: createElement()
     },
-    selectors: {},
+    selectors: {
+      '#priceTable tbody': createElement(),
+      '#priceTableView tbody': createElement(),
+      '#priceTableGhost tbody': createElement(),
+      '#tab-preview .hero img': createElement({ src: '' }),
+      '#tab-preview .price-card': createElement({ style: { backgroundColor: '#223344' } })
+    },
     state: baseState,
+    presets: { navy: { panel: '#223344' } },
     defaults: {
       DEFAULT_PRICING_ITEMS: [],
       DEFAULT_DOC_TYPE: 'two',
@@ -491,34 +614,35 @@ test('initializeApp populates icon gallery with all bundled pictograms', () => {
       DEFAULT_TERM: 12,
       DEFAULT_BANNER_TEXT: 'Banner'
     },
-    featureLibrary: [],
+    features: [
+      { t: 'Hero highlight', c: 'Important detail', img: 'icon-hero.png', hero: true, size: 210 },
+      { t: 'Standard feature', c: 'Support detail', img: '', hero: false, size: 72 }
+    ],
     windowOverrides: {
       __LOGO_DATA__: {},
- codex/display-all-pictograms-in-modal-73ed4x
-      __ICON_DATA__: iconData
-
-      __ICON_DATA__: {
-        'alpha.png': 'data:image/png;base64,AAA=',
-        'beta.jpg': 'data:image/jpeg;base64,BBB='
-      }
- main
+      __ICON_DATA__: { 'icon-hero.png': 'data:image/png;base64,AAA=' }
     }
   }, () => {
     initializeApp();
 
-    iconSearch.dispatchEvent({ type: 'input', target: iconSearch });
+    assert.ok(featureGrid.children.length >= 2, 'feature grid renders cards');
+    const heroCard = featureGrid.children[0];
+    const heroControls = heroCard.children[1];
+    const heroSizeWrap = heroControls.children.find((child) => child.children && child.children[0] && child.children[0].textContent.includes('Icon size'));
+    assert.ok(heroSizeWrap, 'hero card has size controls');
+    const heroLabel = heroSizeWrap.children[0];
+    const heroSlider = heroSizeWrap.children[1];
+    assert.ok(heroLabel.textContent.includes('px'));
+    assert.strictEqual(heroSlider.max, String(220));
 
- codex/display-all-pictograms-in-modal-73ed4x
-    assert.strictEqual(iconGallery.children.length, expectedTitles.length);
-    const titles = iconGallery.children.map((child) => child.title).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-    assert.deepStrictEqual(titles, expectedTitles);
-    assert.strictEqual(iconStatus.textContent, `${expectedTitles.length} pictograms available.`);
-
-    assert.strictEqual(iconGallery.children.length, 2);
-    const titles = iconGallery.children.map((child) => child.title).sort();
-    assert.deepStrictEqual(titles, ['alpha.png', 'beta.jpg']);
-    assert.strictEqual(iconStatus.textContent, '2 pictograms available.');
- main
+    const standardCard = featureGrid.children[1];
+    const standardControls = standardCard.children[1];
+    const standardSizeWrap = standardControls.children.find((child) => child.children && child.children[0] && child.children[0].textContent.includes('Icon size'));
+    assert.ok(standardSizeWrap, 'standard card has size controls');
+    const standardLabel = standardSizeWrap.children[0];
+    const standardSlider = standardSizeWrap.children[1];
+    assert.ok(standardLabel.textContent.includes('px'));
+    assert.strictEqual(standardSlider.max, String(160));
   });
 });
 
@@ -603,6 +727,7 @@ test('buildEmailHTML composes full export with escaped content and live data', (
   assert.ok(html.includes('Boost morale'));
   assert.ok(html.includes('Improve security'));
   assert.ok(html.includes('Features &amp; benefits'));
+  assert.ok(html.includes('Key feature'));
   assert.ok(!html.includes('HERO FEATURE'));
   assert.ok(html.indexOf('Modernise your workplace') < html.indexOf('Telstra Enterprise'));
   assert.ok(!html.includes('(STANDARD FEATURES)'));
@@ -616,6 +741,10 @@ test('buildEmailHTML composes full export with escaped content and live data', (
   assert.ok(html.includes('Monthly investment: $789.00'));
   assert.ok(html.includes('(ex GST)'));
   assert.ok(html.includes('background:#223344'));
+  const pricingPos = html.indexOf('Inclusions &amp; pricing breakdown');
+  const keyFeaturesPos = html.indexOf('Key features');
+  assert.ok(pricingPos >= 0 && keyFeaturesPos > pricingPos, 'Key features section follows pricing breakdown');
+  assert.ok(html.lastIndexOf('Hero Cloud') > keyFeaturesPos, 'Key features section contains hero content');
   assert.ok(!html.includes('undefined'));
 });
 
@@ -639,6 +768,7 @@ test('buildEmailHTML tolerates missing optional sections without crashing', () =
   assert.ok(!html.includes('Key benefits</div><ul'));
   assert.ok(!html.includes('Features &amp; benefits'));
   assert.ok(!html.includes('Inclusions &amp; pricing breakdown'));
+  assert.ok(!html.includes('Key features'));
   assert.ok(!html.includes('Monthly investment:'));
   assert.ok(!html.includes('Commercial terms &amp; dependencies'));
   assert.ok(!html.includes('undefined'));
