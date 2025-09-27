@@ -273,9 +273,7 @@ function withDocumentEnvironment(setup, fn) {
     PRESETS[key] = Object.assign({}, PRESETS[key] || {}, value);
   });
 
-  try {
-    return fn();
-  } finally {
+  const cleanup = () => {
     global.document = previous.document;
     global.window = previous.window;
     global.localStorage = previous.localStorage;
@@ -293,6 +291,18 @@ function withDocumentEnvironment(setup, fn) {
     Object.entries(presetsSnapshot).forEach(([key, value]) => {
       PRESETS[key] = clone(value);
     });
+  };
+
+  try {
+    const result = fn();
+    if (result && typeof result.then === 'function') {
+      return result.finally(cleanup);
+    }
+    cleanup();
+    return result;
+  } catch (error) {
+    cleanup();
+    throw error;
   }
 }
 
@@ -653,69 +663,156 @@ test('__rgbToHex__px converts rgb strings to uppercase hex', () => {
   assert.strictEqual(rgbToHex('not-a-color'), 'not-a-color');
 });
 
-test('buildEmailHTML composes full export with escaped content and live data', () => {
-  const assumptions = [
+function createFeatureCardStub({ title, copy = [], bullets = [], image }) {
+  const titleNode = title ? createElement({ textContent: title }) : null;
+  const copyNodes = copy.map((text) => createElement({ textContent: text }));
+  const bulletNodes = bullets.map((text) => createElement({ textContent: text }));
+  const listNode = bullets.length
+    ? createElement({
+      querySelectorAll(selector) {
+        return selector === 'li' ? bulletNodes : [];
+      }
+    })
+    : null;
+  const iconNode = image
+    ? createElement({
+      src: image,
+      currentSrc: image,
+      alt: title || 'Icon',
+      parentElement: createElement({
+        style: { width: '80px' },
+        getBoundingClientRect: () => ({ width: 80 })
+      })
+    })
+    : null;
+  if (iconNode && iconNode.parentElement) {
+    iconNode.parentElement.appendChild = () => {};
+    iconNode.parentElement.querySelector = () => null;
+  }
+  const card = createElement({
+    querySelector(selector) {
+      if (selector === '[data-export-feature-title]') {
+        return titleNode;
+      }
+      if (selector === '[data-export-feature-list]') {
+        return listNode;
+      }
+      if (selector === '[data-export-feature-image]') {
+        return iconNode;
+      }
+      return null;
+    },
+    querySelectorAll(selector) {
+      if (selector === '[data-export-feature-copy]') {
+        return copyNodes;
+      }
+      return [];
+    }
+  });
+  if (iconNode && iconNode.parentElement) {
+    iconNode.parentElement.parentElement = card;
+  }
+  return card;
+}
+
+test('buildEmailHTML composes full export with escaped content and live data', async () => {
+  const benefitsItems = [
+    createElement({ textContent: 'Rapid deployment' }),
+    createElement({ textContent: '99.99% uptime' })
+  ];
+  const benefitsList = createElement({
+    querySelectorAll(selector) {
+      return selector === 'li' ? benefitsItems : [];
+    },
+    textContent: benefitsItems.map((item) => item.textContent).join('\n')
+  });
+
+  const assumptionItems = [
     createElement({ textContent: 'Payment due & accepted <net30>' }),
     createElement({ textContent: 'Requires onsite team' })
   ];
+  const assumptionsList = createElement({
+    querySelectorAll(selector) {
+      return selector === 'li' ? assumptionItems : [];
+    },
+    textContent: assumptionItems.map((item) => item.textContent).join('\n')
+  });
 
-  const priceRows = [
-    {
-      querySelectorAll(selector) {
-        if (selector === 'td') {
-          return [
-            createElement({ textContent: 'Managed Service & Support' }),
-            createElement({ textContent: '12' }),
-            createElement({ textContent: '$150.00' }),
-            createElement({ textContent: '$1,800.00' })
-          ];
-        }
-        return [];
-      }
-    }
+  const priceHeaders = [
+    createElement({ textContent: 'Item' }),
+    createElement({ textContent: 'Qty' }),
+    createElement({ textContent: 'Unit' }),
+    createElement({ textContent: 'Price (ex GST)' })
   ];
+  const priceCells = [
+    createElement({ textContent: 'Managed Service & Support' }),
+    createElement({ textContent: '12' }),
+    createElement({ textContent: '$150.00' }),
+    createElement({ textContent: '$1,800.00' })
+  ];
+  const priceRow = createElement({
+    querySelectorAll(selector) {
+      return selector === 'td' ? priceCells : [];
+    }
+  });
+  const priceTable = createElement({
+    querySelectorAll(selector) {
+      if (selector === 'thead th') {
+        return priceHeaders;
+      }
+      if (selector === 'tbody tr') {
+        return [priceRow];
+      }
+      return [];
+    }
+  });
 
-  const html = withDocumentEnvironment({
+  const standardCards = [createFeatureCardStub({
+    title: 'Employee experience',
+    copy: ['Boost morale'],
+    bullets: ['Improve security'],
+    image: 'data:image/png;base64,AAA'
+  })];
+  const heroCards = [createFeatureCardStub({
+    title: 'Network transformation',
+    copy: ['End-to-end managed service'],
+    image: 'data:image/png;base64,BBB'
+  })];
+
+  const priceLabelElement = createElement({ textContent: 'Monthly investment' });
+  const priceAmountElement = createElement({ textContent: '$789.00 ex GST' });
+  const priceTermElement = createElement({ textContent: 'Term: 24 months' });
+  const priceCardElement = createElement({
+    children: [priceLabelElement, priceAmountElement, priceTermElement],
+    style: { backgroundColor: '#FFFFFF', borderColor: '#F6F0E8', borderWidth: '2px', borderRadius: '16px' }
+  });
+
+  const html = await withDocumentEnvironment({
     ids: {
-      pageBanner: createElement({ src: 'data:initial' }),
       banner: createElement({ toDataURL: () => 'data:generated-banner' }),
       pvCustomer: createElement({ textContent: 'Telstra Enterprise' }),
-      pvRef: createElement({ textContent: 'Ref: QF-77' }),
+      pvRef: createElement({ textContent: 'QF-77' }),
       pvHero: createElement({ textContent: 'Modernise your workplace' }),
       pvSub: createElement({ textContent: 'A tailored solution for growth' }),
-      pvSummary: createElement({ textContent: 'Fast rollout <guaranteed> & scalable.' }),
-      pvBenefits: createElement({ innerHTML: '<li>Rapid deployment</li><li>99.99% uptime</li>' }),
-      pvMonthly: createElement({ textContent: '$789.00 ex GST' }),
-      priceTableView: createElement({
-        querySelectorAll(selector) {
-          if (selector === 'tbody tr') {
-            return priceRows;
-          }
-          return [];
-        }
-      }),
-      pvTerm2: createElement({ textContent: '24 months' })
+      pvSummary: createElement({ textContent: 'Fast rollout <guaranteed> & scalable.\nWith expert delivery.' }),
+      pvBenefits: benefitsList,
+      pvMonthly: priceAmountElement,
+      pvTerm2: priceTermElement,
+      priceTableView: priceTable,
+      assumptions: assumptionsList
     },
     selectors: {
-      '#tab-preview .hero img': createElement({ src: 'data:hero-image' }),
-      '#tab-preview .price-card': createElement({ style: { backgroundColor: 'rgb(34, 51, 68)' } })
+      '[data-export="price-card"]': priceCardElement
     },
     queryAll: {
-      '#pvBenefits li': [
-        createElement({ textContent: 'Rapid deployment' }),
-        createElement({ textContent: '99.99% uptime' })
-      ]
+      '[data-export="features-standard"] [data-export-feature="card"][data-export-feature-type="standard"]': standardCards,
+      '[data-export="features-hero"] [data-export-feature="card"]': heroCards
     },
-    assumptions,
     presets: {
       test: { panel: '#334455' }
     },
     state: {
-      preset: 'test',
-      features: [
-        { t: 'Network transformation', c: 'End-to-end managed service', img: 'https://cdn/img1.png', hero: true },
-        { t: 'Employee experience', c: 'Boost morale\nImprove security', img: '' }
-      ]
+      preset: 'test'
     }
   }, () => buildEmailHTML());
 
@@ -725,38 +822,46 @@ test('buildEmailHTML composes full export with escaped content and live data', (
   assert.ok(html.includes('Telstra Enterprise'));
   assert.ok(html.includes('Modernise your workplace'));
   assert.ok(html.includes('Executive summary'));
+  assert.ok(html.includes('Fast rollout &lt;guaranteed&gt; &amp; scalable.'));
+  assert.ok(html.includes('With expert delivery.'));
   assert.ok(html.includes('Key benefits'));
   assert.ok(html.includes('Rapid deployment'));
-  assert.ok(html.includes('99.99% uptime'));
-  assert.ok(html.includes('Boost morale'));
   assert.ok(html.includes('Improve security'));
-  assert.ok(html.includes('Features &amp; highlights'));
+  assert.ok(html.includes('Features &amp; benefits'));
+  assert.ok(html.includes('Employee experience'));
+  assert.ok(html.includes('Boost morale'));
+  assert.ok(html.includes('Key Features Included'));
   assert.ok(html.includes('Network transformation'));
   assert.ok(html.includes('End-to-end managed service'));
-  assert.ok(html.includes('Investment overview'));
-  assert.ok(html.includes('Commercial terms &amp; dependencies'));
-  assert.ok(html.includes('Payment due &amp; accepted &lt;net30&gt;'));
+  assert.ok(html.includes('Inclusions &amp; pricing breakdown'));
   assert.ok(html.includes('Managed Service &amp; Support'));
   assert.ok(html.includes('Price (ex GST)'));
   assert.ok(html.includes('$1,800.00'));
   assert.ok(html.includes('Monthly investment'));
-  assert.ok(html.includes('$789.00'));
-  assert.ok(html.includes('EX GST'));
-  assert.ok(html.includes('24 months'));
-  assert.ok(html.includes('Fast rollout &lt;guaranteed&gt;'));
+  assert.ok(html.includes('$789.00 ex GST'));
+  assert.ok(html.includes('Term: 24 months'));
+  assert.ok(html.includes('Commercial Terms &amp; Dependencies'));
+  assert.ok(html.includes('Payment due &amp; accepted &lt;net30&gt;'));
   assert.ok(!html.includes('undefined'));
 });
 
-test('buildEmailHTML tolerates missing optional sections without crashing', () => {
-  const html = withDocumentEnvironment({
+test('buildEmailHTML tolerates missing optional sections without crashing', async () => {
+  const html = await withDocumentEnvironment({
     ids: {
       pvCustomer: createElement({ textContent: 'Minimal Co' }),
       pvRef: createElement({ textContent: '' }),
       pvHero: createElement({ textContent: '' }),
       pvSub: createElement({ textContent: '' }),
       pvSummary: createElement({ textContent: 'Summary only.' }),
-      page2: createElement({ style: { display: 'none' } })
+      pvBenefits: createElement({ textContent: '' }),
+      assumptions: createElement({ textContent: '' }),
+      priceTableView: createElement({
+        querySelectorAll() {
+          return [];
+        }
+      })
     },
+    queryAll: {},
     assumptions: [],
     state: { features: [] }
   }, () => buildEmailHTML());
@@ -764,9 +869,9 @@ test('buildEmailHTML tolerates missing optional sections without crashing', () =
   assert.ok(html.includes('Minimal Co'));
   assert.ok(html.includes('Executive summary'));
   assert.ok(!html.includes('Key benefits</div><ul'));
-  assert.ok(!html.includes('Features &amp; highlights'));
-  assert.ok(!html.includes('Investment overview'));
+  assert.ok(!html.includes('Features &amp; benefits</div>'));
+  assert.ok(!html.includes('Inclusions &amp; pricing breakdown</div><table'));
   assert.ok(!html.includes('Monthly investment'));
-  assert.ok(!html.includes('Commercial terms &amp; dependencies'));
+  assert.ok(!html.includes('Commercial Terms &amp; Dependencies'));
   assert.ok(!html.includes('undefined'));
 });
