@@ -1504,7 +1504,12 @@ function initializeApp() {
     }
     if (!iconGalleryBuilt) {
       const entries = Object.entries(iconMap)
-        .filter(([name]) => typeof name === 'string' && /\.png$/i.test(name))
+        .filter(([name, src]) => {
+          if (typeof name !== 'string' || !src) {
+            return false;
+          }
+          return /\.(png|jpe?g)$/i.test(name);
+        })
         .sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: 'base' }));
       iconGallery.innerHTML = "";
       iconItems.length = 0;

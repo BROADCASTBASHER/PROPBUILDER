@@ -90,6 +90,14 @@ function createElement(overrides = {}) {
     contains() { return false; }
   };
 
+  const attrStore = new Map();
+  element.setAttribute = function setAttribute(name, value) {
+    attrStore.set(String(name), String(value));
+  };
+  element.getAttribute = function getAttribute(name) {
+    return attrStore.has(String(name)) ? attrStore.get(String(name)) : null;
+  };
+
   element.appendChild = function appendChild(child) {
     if (!child) {
       return child;
@@ -422,6 +430,72 @@ test('initializeApp renders pricing rows and updates previews', () => {
     assert.strictEqual(baseState.pricing.items.length, 0);
     assert.strictEqual(itemsContainer.children.length, 0);
     assert.strictEqual(priceTableBody.innerHTML.includes('Add line items'), true);
+  });
+});
+
+test('initializeApp populates icon gallery with all bundled pictograms', () => {
+  const iconGallery = createElement();
+  const iconStatus = createElement();
+  const iconSearch = createElement({ value: '' });
+
+  const baseState = {
+    preset: 'navy',
+    banner: {
+      text: 'Banner',
+      bold: false,
+      textSize: 1,
+      layout: 'left',
+      size: '1000x300',
+      logoMode: 'auto',
+      scale: 1,
+      offsetX: 0,
+      offsetY: 0,
+      fit: 'contain'
+    },
+    docType: 'two',
+    features: [],
+    pricing: {
+      gst: 'ex',
+      items: [],
+      monthly: 0,
+      term: 12
+    }
+  };
+
+  withDocumentEnvironment({
+    ids: {
+      iconGallery,
+      iconGalleryStatus: iconStatus,
+      iconSearch,
+      iconModal: createElement()
+    },
+    selectors: {},
+    state: baseState,
+    defaults: {
+      DEFAULT_PRICING_ITEMS: [],
+      DEFAULT_DOC_TYPE: 'two',
+      DEFAULT_GST_MODE: 'ex',
+      DEFAULT_MONTHLY: 0,
+      DEFAULT_TERM: 12,
+      DEFAULT_BANNER_TEXT: 'Banner'
+    },
+    featureLibrary: [],
+    windowOverrides: {
+      __LOGO_DATA__: {},
+      __ICON_DATA__: {
+        'alpha.png': 'data:image/png;base64,AAA=',
+        'beta.jpg': 'data:image/jpeg;base64,BBB='
+      }
+    }
+  }, () => {
+    initializeApp();
+
+    iconSearch.dispatchEvent({ type: 'input', target: iconSearch });
+
+    assert.strictEqual(iconGallery.children.length, 2);
+    const titles = iconGallery.children.map((child) => child.title).sort();
+    assert.deepStrictEqual(titles, ['alpha.png', 'beta.jpg']);
+    assert.strictEqual(iconStatus.textContent, '2 pictograms available.');
   });
 });
 
