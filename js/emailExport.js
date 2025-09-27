@@ -85,6 +85,33 @@ async function fetchAsDataURL(url) {
   return { dataUri, mime };
 }
 
+async function imageSrcToCanvasDataURI(src) {
+  const tmp = new Image();
+  if (!src.startsWith('file:')) {
+    tmp.crossOrigin = 'anonymous';
+    tmp.referrerPolicy = 'no-referrer';
+  }
+  tmp.decoding = 'sync';
+  tmp.src = src;
+  await tmp.decode().catch(() => {
+    throw new Error('decode failed');
+  });
+
+  const w = tmp.naturalWidth || 1;
+  const h = tmp.naturalHeight || 1;
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) {
+    throw new Error('canvas ctx null');
+  }
+  ctx.drawImage(tmp, 0, 0);
+  const mime = mimeFromExtOrBlob(src);
+  const dataUri = canvas.toDataURL(mime);
+  return { dataUri, mime };
+}
+
 async function imgElementToDataURI(img, warnings) {
   try {
     const src = img.currentSrc || img.src;
@@ -96,35 +123,16 @@ async function imgElementToDataURI(img, warnings) {
       return { dataUri: src, mime: src.includes('image/png') ? 'image/png' : 'image/jpeg' };
     }
 
-    if (src.startsWith('blob:') || src.startsWith('http')) {
+    const canUseFetch = !src.startsWith('file:');
+    if (canUseFetch) {
       try {
         return await fetchAsDataURL(src);
       } catch (error) {
-        const tmp = new Image();
-        tmp.crossOrigin = 'anonymous';
-        tmp.decoding = 'sync';
-        tmp.referrerPolicy = 'no-referrer';
-        tmp.src = src;
-        await tmp.decode().catch(() => {
-          throw new Error('decode failed');
-        });
-
-        const w = tmp.naturalWidth || 1;
-        const h = tmp.naturalHeight || 1;
-        const canvas = document.createElement('canvas');
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        if (!ctx) {
-          throw new Error('canvas ctx null');
-        }
-        ctx.drawImage(tmp, 0, 0);
-        const dataUri = canvas.toDataURL(mimeFromExtOrBlob(src));
-        return { dataUri, mime: mimeFromExtOrBlob(src) };
+        // fall through to canvas fallback
       }
     }
 
-    return await fetchAsDataURL(src);
+    return await imageSrcToCanvasDataURI(src);
   } catch (error) {
     warnings.push(`IMG inline failed: ${img.alt || '[no alt]'} — ${error?.message || error}`);
     return null;
@@ -667,6 +675,7 @@ if (typeof module !== 'undefined' && module.exports) {
       renderFeatureCard,
       renderKeyBenefits,
       inlineAllRasterImages,
+      imgElementToDataURI,
     },
   };
 }
