@@ -90,6 +90,14 @@ function createElement(overrides = {}) {
     contains() { return false; }
   };
 
+  const attrStore = new Map();
+  element.setAttribute = function setAttribute(name, value) {
+    attrStore.set(String(name), String(value));
+  };
+  element.getAttribute = function getAttribute(name) {
+    return attrStore.has(String(name)) ? attrStore.get(String(name)) : null;
+  };
+
   element.appendChild = function appendChild(child) {
     if (!child) {
       return child;
@@ -422,6 +430,78 @@ test('initializeApp renders pricing rows and updates previews', () => {
     assert.strictEqual(baseState.pricing.items.length, 0);
     assert.strictEqual(itemsContainer.children.length, 0);
     assert.strictEqual(priceTableBody.innerHTML.includes('Add line items'), true);
+  });
+});
+
+test('initializeApp populates icon gallery with all bundled pictograms', () => {
+  const iconGallery = createElement();
+  const iconStatus = createElement();
+  const iconSearch = createElement({ value: '' });
+
+  const baseState = {
+    preset: 'navy',
+    banner: {
+      text: 'Banner',
+      bold: false,
+      textSize: 1,
+      layout: 'left',
+      size: '1000x300',
+      logoMode: 'auto',
+      scale: 1,
+      offsetX: 0,
+      offsetY: 0,
+      fit: 'contain'
+    },
+    docType: 'two',
+    features: [],
+    pricing: {
+      gst: 'ex',
+      items: [],
+      monthly: 0,
+      term: 12
+    }
+  };
+
+  const iconData = {};
+  for (let i = 1; i <= 112; i += 1) {
+    iconData[`picto-${i}.png`] = `data:image/png;base64,${i}`;
+  }
+  iconData['brandHero'] = 'data:image/png;base64,hero';
+  iconData['photoAsset.JPG'] = 'data:image/jpeg;base64,photo';
+
+  const expectedTitles = Object.keys(iconData).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+
+  withDocumentEnvironment({
+    ids: {
+      iconGallery,
+      iconGalleryStatus: iconStatus,
+      iconSearch,
+      iconModal: createElement()
+    },
+    selectors: {},
+    state: baseState,
+    defaults: {
+      DEFAULT_PRICING_ITEMS: [],
+      DEFAULT_DOC_TYPE: 'two',
+      DEFAULT_GST_MODE: 'ex',
+      DEFAULT_MONTHLY: 0,
+      DEFAULT_TERM: 12,
+      DEFAULT_BANNER_TEXT: 'Banner'
+    },
+    featureLibrary: [],
+    windowOverrides: {
+      __LOGO_DATA__: {},
+      __ICON_DATA__: iconData
+    }
+  }, () => {
+    initializeApp();
+
+    iconSearch.dispatchEvent({ type: 'input', target: iconSearch });
+
+    assert.strictEqual(iconGallery.children.length, expectedTitles.length);
+    const titles = iconGallery.children.map((child) => child.title).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    assert.deepStrictEqual(titles, expectedTitles);
+    assert.strictEqual(iconStatus.textContent, `${expectedTitles.length} pictograms available.`);
   });
 });
 
