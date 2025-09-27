@@ -302,6 +302,15 @@ async function renderFeatureCard(feature, brand, warnings) {
   if (feature.description) {
     rows.push(`<tr><td style="font-family:${esc(fontFamily)}; font-size:15px; line-height:1.55; color:${esc(bodyColor)};">${textToHTML(feature.description)}</td></tr>`);
   }
+  if (Array.isArray(feature.bullets) && feature.bullets.length) {
+    const items = feature.bullets
+      .map((item) => esc(item))
+      .map((item) => `<li style="padding-bottom:6px;">${item}</li>`)
+      .join('');
+    rows.push(`<tr><td style="font-family:${esc(fontFamily)}; font-size:15px; line-height:1.55; color:${esc(bodyColor)};">
+      <ul style="margin:0; padding:0 0 0 18px;">${items}</ul>
+    </td></tr>`);
+  }
   const content = rows.join('');
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%; border:1px solid rgba(0,0,0,0.08); border-radius:16px; padding:0;">
   <tr>
@@ -659,3 +668,8 @@ module.exports = {
     inlineAllRasterImages,
   },
 };
+
+if (typeof window !== 'undefined') {
+  window.PropBuilderEmailExport = window.PropBuilderEmailExport || {};
+  window.PropBuilderEmailExport.buildEmailExportHTML = buildEmailExportHTML;
+}

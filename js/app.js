@@ -492,572 +492,235 @@ function getHeroImageData() {
 
 
 
-async function buildEmailHTML() {
-  if (typeof document === 'undefined') {
+const EMAIL_CURRENCY_FORMATTER = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' });
+
+function formatEmailCurrency(value) {
+  const formatted = EMAIL_CURRENCY_FORMATTER.format(Math.max(0, Number(value) || 0));
+  if (formatted.startsWith('$')) {
+    return `A$${formatted.slice(1)}`;
+  }
+  return formatted;
+}
+
+function getEmailFieldValue(doc, id) {
+  if (!doc || typeof doc.getElementById !== 'function') {
     return '';
   }
+  const el = doc.getElementById(id);
+  if (!el) {
+    return '';
+  }
+  let raw = '';
+  if (typeof el.value === 'string') {
+    raw = el.value;
+  } else if (typeof el.textContent === 'string') {
+    raw = el.textContent;
+  }
+  return String(raw || '').replace(/\r\n/g, '\n').trim();
+}
 
-  const doc = document;
-  const fontData = 'd09GMgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==';
+function getEmailFieldLines(doc, id) {
+  const value = getEmailFieldValue(doc, id);
+  if (!value) {
+    return [];
+  }
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+function resolveEmailBrand() {
   const presetKey = state && state.preset;
-  const preset = (PRESETS && presetKey && PRESETS[presetKey]) || (PRESETS && PRESETS.navy) || { bg: '#FAF7F3', panel: '#FFFFFF', headline: '#122B5C' };
-  const backgroundColor = preset && preset.bg ? preset.bg : '#FAF7F3';
-  const headlineColor = preset && preset.headline ? preset.headline : '#122B5C';
-  const panelBorderColor = '#DDE2F3';
-  const panelBackground = '#FFFFFF';
-  const baseFontStack = "'TelstraText',-apple-system,'Segoe UI',Roboto,Arial,sans-serif";
-  const baseFontFamily = `font-family:${baseFontStack};`;
-  const baseTextColor = '#273349';
-  const mutedTextColor = '#5B6573';
-  const imageCache = new Map();
-
-  const safe = (value) => String(value == null ? '' : value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-
-  const normalise = (value) => String(value == null ? '' : value).replace(/\r\n/g, '\n');
-
-  const findExportNode = (name, fallbackSelector) => {
-    if (!name) {
-      return fallbackSelector ? doc.querySelector(fallbackSelector) : null;
-    }
-    return doc.querySelector(`[data-export="${name}"]`) || (fallbackSelector ? doc.querySelector(fallbackSelector) : null);
+  const preset = (PRESETS && presetKey && PRESETS[presetKey]) || (PRESETS && PRESETS.navy) || {};
+  return {
+    fontFamily: "'TelstraText', -apple-system, 'Segoe UI', Roboto, Arial, sans-serif",
+    colorHeading: preset.headline || '#0B1220',
+    colorText: '#273349',
+    colorMuted: '#5B6573',
+    priceCardShade: '#F3F4F9',
   };
+}
 
-  const textFrom = (name, fallbackSelector) => {
-    const node = findExportNode(name, fallbackSelector);
-    if (!node || typeof node.textContent !== 'string') {
-      return '';
-    }
-    return normalise(node.textContent).trim();
-  };
-
-  const listFrom = (name, fallbackSelector) => {
-    const container = findExportNode(name, fallbackSelector);
-    if (!container) {
-      return [];
-    }
-    const items = Array.from(container.querySelectorAll('li'))
-      .map((item) => normalise(item.textContent).trim())
-      .filter((item) => item.length > 0);
-    if (items.length) {
-      return items;
-    }
-    const fallbackText = normalise(container.textContent).trim();
-    if (!fallbackText) {
-      return [];
-    }
-    return fallbackText.split('\n').map((line) => line.trim()).filter((line) => line.length > 0);
-  };
-
-  const measureWidth = (element, fallback) => {
-    if (!element) {
-      return fallback || 0;
-    }
-    if (typeof element.getBoundingClientRect === 'function') {
-      const rect = element.getBoundingClientRect();
-      if (rect && rect.width) {
-        return Math.round(rect.width);
+function buildFeaturesForEmail() {
+  if (!Array.isArray(state.features)) {
+    return [];
+  }
+  return state.features
+    .filter((feature) => feature && (feature.t || feature.c || feature.img))
+    .map((feature) => {
+      const title = feature.t ? String(feature.t).trim() : '';
+      const copy = feature.c ? String(feature.c).trim() : '';
+      let description = '';
+      let bullets = [];
+      if (copy.includes('\n')) {
+        bullets = copy.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0);
+      } else {
+        description = copy;
       }
+      const image = feature.img
+        ? {
+            src: feature.img,
+            width: clampIconSizeValue(feature.size, feature.hero),
+            alt: title || 'Feature image',
+          }
+        : null;
+      return {
+        title,
+        description,
+        bullets,
+        image,
+        isHero: Boolean(feature.hero),
+      };
+    })
+    .filter((feature) => feature.title || feature.description || (feature.bullets && feature.bullets.length) || feature.image);
+}
+
+function buildPricingTableHTMLForEmail(brand) {
+  const items = Array.isArray(state.pricing?.items) ? state.pricing.items : [];
+  const rows = [];
+  items.forEach((item) => {
+    if (!item) {
+      return;
     }
-    if (typeof getComputedStyle === 'function') {
-      const computed = getComputedStyle(element);
-      if (computed && computed.width) {
-        const numeric = Number.parseFloat(computed.width);
-        if (Number.isFinite(numeric) && numeric > 0) {
-          return Math.round(numeric);
-        }
-      }
+    const label = String(item.label || '').trim();
+    const unit = String(item.unit || '').trim();
+    const qtyValue = Number(item.qty);
+    const priceValue = Number(item.price);
+    const hasData = label || unit || Number.isFinite(qtyValue) || Number.isFinite(priceValue);
+    if (!hasData) {
+      return;
     }
-    if (element.style && element.style.width) {
-      const match = element.style.width.match(/(\d+(?:\.\d+)?)/);
-      if (match) {
-        const numeric = Number.parseFloat(match[1]);
-        if (Number.isFinite(numeric)) {
-          return Math.round(numeric);
-        }
-      }
+    const qtyText = Number.isFinite(qtyValue) && qtyValue > 0 ? String(qtyValue) : '';
+    const baseTotal = Number.isFinite(qtyValue) && qtyValue > 0 ? priceValue * qtyValue : priceValue;
+    let priceText = '';
+    if (Number.isFinite(baseTotal) && baseTotal > 0) {
+      const total = state.pricing.gst === 'inc' ? baseTotal * 1.1 : baseTotal;
+      priceText = formatEmailCurrency(total);
+    } else if (Number.isFinite(priceValue) && priceValue > 0) {
+      const total = state.pricing.gst === 'inc' ? priceValue * 1.1 : priceValue;
+      priceText = formatEmailCurrency(total);
+    } else if (label) {
+      priceText = 'Included';
     }
-    if (element.width && Number.isFinite(Number(element.width))) {
-      return Number(element.width);
-    }
-    return fallback || 0;
+    rows.push([
+      label || '&nbsp;',
+      qtyText || '&nbsp;',
+      unit || '&nbsp;',
+      priceText || '&nbsp;',
+    ]);
+  });
+  if (!rows.length) {
+    return '';
+  }
+  const headerLabel = state.pricing.gst === 'inc' ? 'Price (inc GST)' : 'Price (ex GST)';
+  const headerCells = ['Item', 'Qty', 'Unit', headerLabel];
+  const headerHtml = headerCells
+    .map((text) => `<th style="font-family:${esc(brand.fontFamily)}; font-size:15px; font-weight:600; color:${esc(brand.colorHeading)}; background-color:rgba(0, 0, 0, 0.04); padding:12px 10px; text-align:left;">${esc(text)}</th>`)
+    .join('');
+  const rowHtml = rows
+    .map((cells) => `<tr>${cells.map((text) => `<td style="font-family:${esc(brand.fontFamily)}; font-size:15px; line-height:1.55; color:${esc(brand.colorText)}; padding:12px 10px; border-bottom:1px solid rgba(0, 0, 0, 0.08);">${text === '&nbsp;' ? '&nbsp;' : esc(String(text))}</td>`).join('')}</tr>`)
+    .join('');
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%; border:1px solid rgba(0, 0, 0, 0.1); border-radius:16px; overflow:hidden;">`
+    + `<thead><tr>${headerHtml}</tr></thead>`
+    + `<tbody>${rowHtml}</tbody>`
+    + '</table>';
+}
+
+function buildPriceCardForEmail(brand) {
+  const monthlyValue = Number(state.pricing?.monthly) || 0;
+  const termValue = Number(state.pricing?.term) || 0;
+  const displayMonthly = state.pricing?.gst === 'inc' ? monthlyValue * 1.1 : monthlyValue;
+  const gstLabel = state.pricing?.gst === 'inc' ? 'inc GST' : 'ex GST';
+  const amountText = `${formatEmailCurrency(displayMonthly)} ${gstLabel}`;
+  const termText = termValue ? `Term: ${termValue} months` : '';
+  const parts = [];
+  parts.push(`<div style="font-family:${esc(brand.fontFamily)}; font-size:14px; font-weight:600; color:${esc(brand.colorMuted)};">Monthly investment</div>`);
+  parts.push(`<div style="font-family:${esc(brand.fontFamily)}; font-size:30px; font-weight:700; color:${esc(brand.colorHeading)}; margin-top:6px;">${esc(amountText)}</div>`);
+  if (termText) {
+    parts.push(`<div style="font-family:${esc(brand.fontFamily)}; font-size:14px; color:${esc(brand.colorText)}; margin-top:8px;">${esc(termText)}</div>`);
+  }
+  return {
+    show: Boolean(parts.length),
+    html: parts.join(''),
+    shadedBgColor: brand.priceCardShade || '#F3F4F9',
   };
+}
 
-  const guessMimeFromUrl = (url) => {
-    const lower = String(url || '').split('?')[0].toLowerCase();
-    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
-      return 'image/jpeg';
-    }
-    if (lower.endsWith('.webp')) {
-      return 'image/webp';
-    }
-    return 'image/png';
-  };
-
-  const fetchImageAsDataUrl = (url) => fetchImageAsDataUrlImpl(url);
-
-  const toDataUri = async (img, source) => {
-    const rawSrc = source || (img ? (img.currentSrc || img.src) : '');
-    if (!rawSrc) {
-      return null;
-    }
-    if (String(rawSrc).startsWith('data:')) {
-      return rawSrc;
-    }
-
-    let absolute = rawSrc;
+function captureBannerForEmail(doc) {
+  if (!doc || typeof doc.getElementById !== 'function') {
+    return null;
+  }
+  const canvas = doc.getElementById('banner');
+  if (canvas && typeof canvas.toDataURL === 'function') {
     try {
-      const base = (doc && (doc.baseURI || doc.URL)) || (typeof window !== 'undefined' && window.location ? window.location.href : undefined);
-      absolute = base ? new URL(rawSrc, base).href : new URL(rawSrc).href;
+      const data = canvas.toDataURL('image/png', 1.0);
+      if (data && data.startsWith('data:image/')) {
+        return data;
+      }
     } catch (error) {
-      absolute = rawSrc;
+      // ignore canvas read errors
     }
-
-    const cacheKeys = [rawSrc, absolute].filter((value, index, array) => value && array.indexOf(value) === index);
-    for (const key of cacheKeys) {
-      if (imageCache.has(key)) {
-        return imageCache.get(key);
-      }
-    }
-
-    const remember = (value) => {
-      cacheKeys.forEach((key) => {
-        imageCache.set(key, value);
-      });
-      return value;
+  }
+  const fallback = doc.getElementById('pageBanner') || doc.getElementById('pageBanner2');
+  if (fallback && fallback.src) {
+    return {
+      src: fallback.src,
+      alt: fallback.alt || 'Proposal banner',
     };
+  }
+  return null;
+}
 
-    const waitForDecode = async () => {
-      if (!img) {
-        return;
-      }
-      if (typeof img.decode === 'function') {
-        try {
-          await img.decode();
-          return;
-        } catch (error) {
-          // ignore decode errors and fall back to load events
-        }
-      }
-      const complete = typeof img.complete === 'boolean' ? img.complete : true;
-      if (complete) {
-        return;
-      }
-      if (typeof img.addEventListener !== 'function') {
-        return;
-      }
-      await new Promise((resolve, reject) => {
-        const cleanup = () => {
-          if (typeof img.removeEventListener === 'function') {
-            img.removeEventListener('load', onLoad);
-            img.removeEventListener('error', onError);
-          }
-        };
-        const onLoad = () => {
-          cleanup();
-          resolve();
-        };
-        const onError = () => {
-          cleanup();
-          reject(new Error('decode-failed'));
-        };
-        img.addEventListener('load', onLoad, { once: true });
-        img.addEventListener('error', onError, { once: true });
-      }).catch(() => {});
-    };
-
-    const fallbackToCanvas = async () => {
-      if (!img || !doc || typeof doc.createElement !== 'function') {
-        return null;
-      }
-      try {
-        await waitForDecode();
-      } catch (error) {
-        // ignore decode errors
-      }
-      const width = Number(img.naturalWidth || img.width || 0);
-      const height = Number(img.naturalHeight || img.height || 0);
-      if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
-        return null;
-      }
-      try {
-        const canvas = doc.createElement('canvas');
-        if (!canvas) {
-          return null;
-        }
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = typeof canvas.getContext === 'function' ? canvas.getContext('2d', { willReadFrequently: true }) : null;
-        if (!ctx || typeof ctx.drawImage !== 'function') {
-          return null;
-        }
-        ctx.drawImage(img, 0, 0, width, height);
-        if (typeof canvas.toDataURL !== 'function') {
-          return null;
-        }
-        const data = canvas.toDataURL(guessMimeFromUrl(absolute));
-        if (data && typeof data === 'string' && data.startsWith('data:')) {
-          return remember(data);
-        }
-      } catch (error) {
-        // ignore canvas failures
-      }
-      return null;
-    };
-
-    const tryDirectFetch = async () => {
-      if (typeof fetch !== 'function') {
-        return null;
-      }
-      try {
-        const response = await fetch(absolute, { cache: 'force-cache' });
-        if (!response || !response.ok) {
-          return null;
-        }
-        const mime = (response.headers && response.headers.get && response.headers.get('content-type')) || 'application/octet-stream';
-        if (typeof FileReader === 'function') {
-          const blob = await response.blob();
-          const data = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
-            reader.onerror = () => reject(new Error('read-failed'));
-            reader.readAsDataURL(blob);
-          });
-          if (data && data.startsWith('data:')) {
-            return data;
-          }
-          return null;
-        }
-        if (typeof Buffer !== 'undefined') {
-          const arrayBuffer = await response.arrayBuffer();
-          const base64 = Buffer.from(arrayBuffer).toString('base64');
-          const data = `data:${mime};base64,${base64}`;
-          if (data && data.startsWith('data:')) {
-            return data;
-          }
-        }
-      } catch (error) {
-        return null;
-      }
-      return null;
-    };
-
-    const tryHelperFetch = async () => {
-      try {
-        const result = await fetchImageAsDataUrl(absolute);
-        if (result && typeof result === 'string' && result.startsWith('data:')) {
-          return result;
-        }
-      } catch (error) {
-        // ignore helper errors
-      }
-      return null;
-    };
-
-    let dataUri = await tryDirectFetch();
-    if (!dataUri) {
-      dataUri = await tryHelperFetch();
-    }
-    if (dataUri) {
-      return remember(dataUri);
-    }
-
-    const canvasResult = await fallbackToCanvas();
-    if (canvasResult) {
-      return canvasResult;
-    }
-
-    return remember(null);
+function collectProposalForEmail(doc) {
+  const brand = resolveEmailBrand();
+  const banner = captureBannerForEmail(doc);
+  const summary = getEmailFieldValue(doc, 'summaryEdit');
+  const keyBenefits = getEmailFieldLines(doc, 'benefitsEdit');
+  const terms = getEmailFieldLines(doc, 'assumptionsEdit').join('\n');
+  return {
+    banner,
+    brand,
+    customer: getEmailFieldValue(doc, 'customer'),
+    ref: getEmailFieldValue(doc, 'ref'),
+    headlineMain: getEmailFieldValue(doc, 'hero') || state.banner?.text || '',
+    headlineSub: getEmailFieldValue(doc, 'subHero'),
+    executiveSummary: summary,
+    keyBenefits,
+    features: buildFeaturesForEmail(),
+    pricingTableHTML: buildPricingTableHTMLForEmail(brand),
+    priceCard: buildPriceCardForEmail(brand),
+    commercialTerms: terms,
   };
+}
 
-  const imageFromElement = async (img, options = {}) => {
-    if (!img) {
-      return null;
-    }
-    const src = img.currentSrc || img.src || '';
-    if (!src) {
-      return null;
-    }
-    const dataUri = await toDataUri(img, src);
-    if (!dataUri) {
-      if (typeof console !== 'undefined' && console && typeof console.warn === 'function') {
-        console.warn('Unable to inline image for export; omitting from output', src);
-      }
-      return null;
-    }
-    const width = options.width || measureWidth(img, options.fallbackWidth || 0) || (img.naturalWidth ? Math.min(img.naturalWidth, 320) : 0);
-    const alt = img.alt ? img.alt.trim() : '';
-    return { src: dataUri, width, alt };
-  };
-
-  const extractFeatureCard = async (node) => {
-    if (!node) {
-      return null;
-    }
-    const titleNode = node.querySelector('[data-export-feature-title]');
-    const copyNodes = Array.from(node.querySelectorAll('[data-export-feature-copy]'));
-    const listNode = node.querySelector('[data-export-feature-list]');
-    const iconNode = node.querySelector('[data-export-feature-image]');
-    const iconWrap = iconNode ? iconNode.parentElement : null;
-    const title = titleNode ? normalise(titleNode.textContent).trim() : '';
-    const copy = copyNodes.map((el) => normalise(el.textContent).trim()).filter((value) => value.length > 0);
-    const bullets = listNode
-      ? Array.from(listNode.querySelectorAll('li')).map((el) => normalise(el.textContent).trim()).filter((value) => value.length > 0)
-      : [];
-    const image = iconNode ? await imageFromElement(iconNode, { width: measureWidth(iconWrap, 72), fallbackWidth: 72 }) : null;
-    if (!title && !copy.length && !bullets.length && !image) {
-      return null;
-    }
-    return { title, copy, bullets, image };
-  };
-
-  const collectFeatureCards = async (selector) => {
-    const nodes = Array.from(doc.querySelectorAll(selector));
-    const results = [];
-    for (const node of nodes) {
-      const card = await extractFeatureCard(node);
-      if (card) {
-        results.push(card);
-      }
-    }
-    return results;
-  };
-
-  const renderFeatureCard = (feature, options = {}) => {
-    const { hero = false } = options;
-    const parts = [];
-    parts.push('<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;border:1px solid #E7E7EA;border-radius:14px;background:#FFFFFF;">');
-    parts.push('<tr>');
-    if (feature.image && feature.image.src) {
-      const width = Math.max(48, feature.image.width || (hero ? 96 : 64));
-      parts.push(`<td valign="top" style="padding:14px 12px 14px 14px;width:${width}px;">`);
-      parts.push(`<img src="${feature.image.src}" alt="${safe(feature.image.alt || feature.title || 'Feature image')}" width="${width}" style="width:${width}px;height:auto;display:block;border:0;">`);
-      parts.push('</td>');
-    } else {
-      parts.push('<td valign="top" style="padding:14px 0 14px 0;width:0;"></td>');
-    }
-    parts.push('<td valign="top" style="padding:14px 18px 14px 12px;">');
-    if (feature.title) {
-      const size = hero ? 20 : 18;
-      parts.push(`<div style="${baseFontFamily}font-weight:700;font-size:${size}px;color:${headlineColor};margin:0 0 6px;">${safe(feature.title)}</div>`);
-    }
-    feature.copy.forEach((line, index) => {
-      parts.push(`<div style="${baseFontFamily}color:${baseTextColor};font-size:16px;line-height:1.6;margin:${index === 0 && !feature.title ? '0' : '8px 0 0'};">${safe(line)}</div>`);
-    });
-    if (feature.bullets.length) {
-      parts.push(`<ul style="${baseFontFamily}color:${baseTextColor};font-size:16px;line-height:1.6;margin:${feature.copy.length ? '12px 0 0' : '0'};padding-left:20px;">${feature.bullets.map((item) => `<li style="margin:0 0 6px;">${safe(item)}</li>`).join('')}</ul>`);
-    }
-    parts.push('</td>');
-    parts.push('</tr>');
-    parts.push('</table>');
-    return parts.join('');
-  };
-
-  const renderFeatureGroup = (features, options = {}) => {
-    if (!features.length) {
-      return '';
-    }
-    const rows = [];
-    rows.push('<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;">');
-    features.forEach((feature, index) => {
-      rows.push(`<tr><td style="padding:${index === 0 ? '0' : '16px'} 0 0;">${renderFeatureCard(feature, options)}</td></tr>`);
-    });
-    rows.push('</table>');
-    return rows.join('');
-  };
-
-  const pricingTableMarkup = (() => {
-    const table = findExportNode('pricing-table', '#priceTableView');
-    if (!table) {
-      return '';
-    }
-    const headerCells = Array.from(table.querySelectorAll('thead th'));
-    const bodyRows = Array.from(table.querySelectorAll('tbody tr'));
-    if (!headerCells.length || !bodyRows.length) {
-      return '';
-    }
-    const headerHtml = headerCells.map((cell) => `<th style="${baseFontFamily}font-size:15px;font-weight:700;color:${headlineColor};background:#F6F8FB;border-bottom:1px solid #E7E7EA;padding:12px 10px;text-align:left;">${safe(normalise(cell.textContent).trim())}</th>`).join('');
-    const rowsHtml = bodyRows.map((row) => {
-      const cells = Array.from(row.querySelectorAll('td'));
-      if (!cells.length) {
-        return '';
-      }
-      const cellHtml = cells.map((cell) => `<td style="${baseFontFamily}font-size:15px;color:${baseTextColor};line-height:1.6;border-bottom:1px solid #E7E7EA;padding:12px 10px;vertical-align:top;">${safe(normalise(cell.textContent).trim()).replace(/\n/g, '<br>')}</td>`).join('');
-      return `<tr>${cellHtml}</tr>`;
-    }).join('');
-    return `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;border:1px solid #E7E7EA;border-radius:14px;overflow:hidden;">` + `<thead><tr>${headerHtml}</tr></thead>` + `<tbody>${rowsHtml}</tbody></table>`;
-  })();
-
-  const bannerCanvas = findExportNode('banner-canvas', '#banner');
-  let bannerData = '';
-  if (bannerCanvas && typeof bannerCanvas.toDataURL === 'function') {
-    try {
-      bannerData = bannerCanvas.toDataURL('image/png', 1.0);
-    } catch (error) {
-      bannerData = '';
-    }
+function resolveEmailBuilder() {
+  if (typeof window !== 'undefined' && window.PropBuilderEmailExport && typeof window.PropBuilderEmailExport.buildEmailExportHTML === 'function') {
+    return window.PropBuilderEmailExport.buildEmailExportHTML;
   }
-  if (!bannerData) {
-    const bannerImg = findExportNode('banner-image', '#pageBanner');
-    const fallbackBanner = bannerImg ? await imageFromElement(bannerImg, { width: 640, fallbackWidth: 640 }) : null;
-    bannerData = fallbackBanner && fallbackBanner.src ? fallbackBanner.src : '';
-  }
-
-  const customer = textFrom('customer', '#pvCustomer');
-  const referenceRaw = textFrom('ref', '#pvRef');
-  const reference = referenceRaw
-    ? (referenceRaw.toLowerCase().startsWith('ref') ? referenceRaw : `Ref: ${referenceRaw}`)
-    : '';
-  const mainHeadline = textFrom('headline-main', '#pvHero');
-  const subHeadline = textFrom('headline-sub', '#pvSub');
-  const summaryText = textFrom('exec-summary', '#pvSummary');
-  const keyBenefits = listFrom('key-benefits', '#pvBenefits');
-  const standardFeatures = await collectFeatureCards('[data-export="features-standard"] [data-export-feature="card"][data-export-feature-type="standard"]');
-  const heroFeatures = await collectFeatureCards('[data-export="features-hero"] [data-export-feature="card"]');
-  const priceAmount = textFrom('price-amount', '#pvMonthly');
-  const priceTerm = textFrom('price-term', '#pvTerm2');
-  const terms = listFrom('terms-dependencies', '#assumptions');
-  const priceCardNode = findExportNode('price-card');
-  const priceLabel = priceCardNode && priceCardNode.children && priceCardNode.children[0] && priceCardNode.children[0].textContent
-    ? normalise(priceCardNode.children[0].textContent).trim()
-    : 'Monthly investment';
-  const priceComputed = priceCardNode && typeof getComputedStyle === 'function' ? getComputedStyle(priceCardNode) : null;
-  const priceBackground = __rgbToHex__px((priceComputed && priceComputed.backgroundColor) || (priceCardNode && priceCardNode.style && priceCardNode.style.backgroundColor) || '#FFFFFF');
-  const priceBorderColor = __rgbToHex__px((priceComputed && priceComputed.borderColor) || (priceCardNode && priceCardNode.style && priceCardNode.style.borderColor) || '#F6F0E8');
-  const priceBorderWidth = (priceComputed && priceComputed.borderTopWidth) || (priceCardNode && priceCardNode.style && priceCardNode.style.borderWidth) || '2px';
-  const priceBorderRadius = (priceComputed && priceComputed.borderRadius) || (priceCardNode && priceCardNode.style && priceCardNode.style.borderRadius) || '16px';
-
-  const summaryParagraphs = normalise(summaryText).split(/\n{2,}/).map((chunk) => chunk.trim()).filter((chunk) => chunk.length > 0);
-
-  const contentWidth = 640;
-  const modules = [];
-
-  if (bannerData) {
-    modules.push(`<tr><td style="padding:0;margin:0;"><img src="${bannerData}" alt="Proposal banner" width="${contentWidth}" style="width:100%;max-width:${contentWidth}px;height:auto;display:block;border:0;"></td></tr>`);
-  }
-
-  const headerParts = [];
-  if (customer) {
-    headerParts.push(`<div style="${baseFontFamily}font-size:20px;font-weight:800;color:${headlineColor};margin:0 0 10px;">${safe(customer)}</div>`);
-  }
-  if (reference) {
-    headerParts.push(`<div style="margin:0 0 16px;">` + `<span style="${baseFontFamily}font-size:13px;font-weight:600;color:${headlineColor};background:#EEF2FF;border:1px solid #E0E7FF;border-radius:999px;padding:5px 12px;display:inline-block;">${safe(reference)}</span>` + `</div>`);
-  }
-  if (mainHeadline) {
-    headerParts.push(`<div style="${baseFontFamily}font-size:26px;font-weight:800;color:${headlineColor};margin:0 0 8px;">${safe(mainHeadline)}</div>`);
-  }
-  if (subHeadline) {
-    headerParts.push(`<div style="${baseFontFamily}font-size:18px;font-weight:500;color:${mutedTextColor};margin:0 0 4px;">${safe(subHeadline)}</div>`);
-  }
-  if (headerParts.length) {
-    modules.push(`<tr><td style="padding:${modules.length ? '28px' : '32px'} 32px 0;">${headerParts.join('')}</td></tr>`);
-  }
-
-  if (summaryParagraphs.length || keyBenefits.length) {
-    const overviewParts = [];
-    overviewParts.push('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;">');
-    overviewParts.push('<tr>');
-    overviewParts.push('<td valign="top" style="padding:0 12px 0 0;width:50%;">');
-    overviewParts.push(`<div style="${baseFontFamily}font-size:18px;font-weight:700;color:${headlineColor};margin:0 0 10px;">Executive summary</div>`);
-    if (summaryParagraphs.length) {
-      summaryParagraphs.forEach((paragraph, index) => {
-        overviewParts.push(`<div style="${baseFontFamily}color:${baseTextColor};font-size:16px;line-height:1.6;margin:${index === 0 ? '0' : '12px 0 0'};">${safe(paragraph).replace(/\n/g, '<br>')}</div>`);
-      });
-    } else {
-      overviewParts.push(`<div style="${baseFontFamily}color:${mutedTextColor};font-size:16px;line-height:1.6;margin:0;">&nbsp;</div>`);
+  try {
+    const mod = require('./emailExport');
+    if (mod && typeof mod.buildEmailExportHTML === 'function') {
+      return mod.buildEmailExportHTML;
     }
-    overviewParts.push('</td>');
-    overviewParts.push('<td valign="top" style="padding:0 0 0 12px;width:50%;">');
-    overviewParts.push(`<div style="${baseFontFamily}font-size:18px;font-weight:700;color:${headlineColor};margin:0 0 10px;">Key benefits</div>`);
-    if (keyBenefits.length) {
-      overviewParts.push(`<ul style="${baseFontFamily}color:${baseTextColor};font-size:16px;line-height:1.6;margin:0;padding-left:20px;">${keyBenefits.map((item) => `<li style="margin:0 0 8px;">${safe(item)}</li>`).join('')}</ul>`);
-    } else {
-      overviewParts.push(`<div style="${baseFontFamily}color:${mutedTextColor};font-size:16px;line-height:1.6;">&nbsp;</div>`);
-    }
-    overviewParts.push('</td>');
-    overviewParts.push('</tr>');
-    overviewParts.push('</table>');
-    modules.push(`<tr><td style="padding:${modules.length ? '28px' : '32px'} 32px 0;">${overviewParts.join('')}</td></tr>`);
+  } catch (error) {
+    // ignore module resolution errors in browser
   }
+  return null;
+}
 
-  if (standardFeatures.length) {
-    const featureBlock = [];
-    featureBlock.push(`<div style="${baseFontFamily}font-size:22px;font-weight:700;color:${headlineColor};margin:0 0 16px;">Features &amp; benefits</div>`);
-    featureBlock.push(renderFeatureGroup(standardFeatures, { hero: false }));
-    modules.push(`<tr><td style="padding:28px 32px 0;">${featureBlock.join('')}</td></tr>`);
+async function buildEmailHTML() {
+  const doc = typeof document !== 'undefined' ? document : (typeof global !== 'undefined' && global.document ? global.document : null);
+  if (!doc) {
+    return '';
   }
-
-  if (heroFeatures.length) {
-    modules.push(`<tr><td style="padding:32px 32px 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="border-top:1px solid #E5E6EA;height:1px;font-size:1px;line-height:1px;">&nbsp;</td></tr></table></td></tr>`);
-    const heroBlock = [];
-    heroBlock.push(`<div style="${baseFontFamily}font-size:22px;font-weight:700;color:${headlineColor};margin:0 0 16px;">Key Features Included</div>`);
-    heroBlock.push(renderFeatureGroup(heroFeatures, { hero: true }));
-    modules.push(`<tr><td style="padding:24px 32px 0;">${heroBlock.join('')}</td></tr>`);
+  const builder = resolveEmailBuilder();
+  if (!builder) {
+    throw new Error('Email export builder unavailable');
   }
-
-  const pricingBlock = [];
-  pricingBlock.push(`<div style="${baseFontFamily}font-size:24px;font-weight:800;color:${headlineColor};margin:0 0 18px;">Inclusions &amp; pricing breakdown</div>`);
-  if (pricingTableMarkup) {
-    pricingBlock.push(pricingTableMarkup);
-  }
-  if (pricingBlock.length > 1) {
-    modules.push(`<tr><td style="padding:32px 32px 0;">${pricingBlock.join('')}</td></tr>`);
-  }
-
-  if (priceAmount) {
-    const priceParts = [];
-    priceParts.push('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;">');
-    priceParts.push('<tr><td>');
-    priceParts.push(`<div style="${baseFontFamily}background:${priceBackground};border:${priceBorderWidth} solid ${priceBorderColor};border-radius:${priceBorderRadius};padding:18px 20px;">`);
-    priceParts.push(`<div style="${baseFontFamily}font-size:14px;font-weight:600;color:${mutedTextColor};margin:0 0 6px;">${safe(priceLabel)}</div>`);
-    priceParts.push(`<div style="${baseFontFamily}font-size:30px;font-weight:800;color:${headlineColor};margin:0 0 6px;">${safe(priceAmount)}</div>`);
-    if (priceTerm) {
-      priceParts.push(`<div style="${baseFontFamily}font-size:14px;color:${mutedTextColor};margin:0;">${safe(priceTerm)}</div>`);
-    }
-    priceParts.push('</div>');
-    priceParts.push('</td></tr>');
-    priceParts.push('</table>');
-    modules.push(`<tr><td style="padding:28px 32px 0;">${priceParts.join('')}</td></tr>`);
-  }
-
-  if (terms.length) {
-    const termsBlock = [];
-    termsBlock.push(`<div style="${baseFontFamily}font-size:18px;font-weight:700;color:${headlineColor};margin:0 0 12px;">Commercial Terms &amp; Dependencies</div>`);
-    const termRows = terms.map((item) => `<tr><td style="${baseFontFamily}color:${baseTextColor};font-size:16px;line-height:1.6;padding:4px 0;">${safe(item)}</td></tr>`).join('');
-    termsBlock.push(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;">${termRows}</table>`);
-    modules.push(`<tr><td style="padding:28px 32px 0;">${termsBlock.join('')}</td></tr>`);
-  }
-
-  modules.push('<tr><td style="padding:32px 32px 36px;font-size:12px;line-height:1.4;text-align:center;color:#5B6573;">Prepared with the TBTC VIC EAST Proposal Studio.</td></tr>');
-
-  const docTitle = doc && doc.title ? safe(doc.title) : 'Proposal export';
-
-  const htmlParts = [];
-  htmlParts.push('<!doctype html>');
-  htmlParts.push('<html lang="en">');
-  htmlParts.push('<head>');
-  htmlParts.push('<meta charset="utf-8">');
-  htmlParts.push('<meta name="viewport" content="width=device-width,initial-scale=1">');
-  htmlParts.push(`<title>${docTitle}</title>`);
-  htmlParts.push(`<style type="text/css">@font-face{font-family:'TelstraText';font-style:normal;font-weight:400;font-display:swap;src:url(data:font/woff2;base64,${fontData}) format('woff2');}</style>`);
-  htmlParts.push('</head>');
-  htmlParts.push(`<body style="margin:0;padding:0;background:${backgroundColor};${baseFontFamily}color:${baseTextColor};">`);
-  htmlParts.push(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;background:${backgroundColor};">`);
-  htmlParts.push('<tr><td align="center" style="padding:32px 16px;">');
-  htmlParts.push(`<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;max-width:${contentWidth}px;border-collapse:separate;background:${panelBackground};border:1px solid ${panelBorderColor};border-radius:32px;overflow:hidden;">`);
-  htmlParts.push('<tbody>');
-  htmlParts.push(modules.join(''));
-  htmlParts.push('</tbody>');
-  htmlParts.push('</table>');
-  htmlParts.push('</td></tr>');
-  htmlParts.push('</table>');
-  htmlParts.push('</body>');
-  htmlParts.push('</html>');
-  return htmlParts.join('');
+  const proposal = collectProposalForEmail(doc);
+  const result = await builder(proposal);
+  return result && result.html ? result.html : '';
 }
 function initializeApp() {
   if (typeof document === 'undefined') {
@@ -2633,6 +2296,7 @@ function initializeApp() {
     });
   }
 }
+
 
 async function downloadEmailHTML() {
   if (typeof document === 'undefined') {
