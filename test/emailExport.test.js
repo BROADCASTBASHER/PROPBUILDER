@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 
 const {
-  __private: { imgElementToDataURI },
+  __private: { imgElementToDataURI, inlineBackgroundImage },
 } = require('../js/emailExport.js');
 
 function setupCanvasEnvironment(t, { expectedType, dataUri, width = 100, height = 50 }) {
@@ -41,6 +41,7 @@ function setupCanvasEnvironment(t, { expectedType, dataUri, width = 100, height 
   };
 
   global.document = {
+    baseURI: 'https://example.com/',
     createElement(tag) {
       assert.strictEqual(tag, 'canvas');
       return canvas;
@@ -132,4 +133,45 @@ test('imgElementToDataURI skips fetch for file URLs', async (t) => {
     mime: 'image/jpeg',
   });
   assert.deepStrictEqual(warnings, []);
+});
+
+test('inlineBackgroundImage falls back to canvas data when fetch fails', async (t) => {
+  setupCanvasEnvironment(t, {
+    expectedType: 'image/png',
+    dataUri: 'data:image/png;base64,canvasbg',
+  });
+
+  let fetchCalls = 0;
+  global.fetch = async () => {
+    fetchCalls += 1;
+    throw new Error('network failure');
+  };
+
+  const originalGetComputedStyle = global.getComputedStyle;
+  t.after(() => {
+    if (originalGetComputedStyle === undefined) {
+      delete global.getComputedStyle;
+    } else {
+      global.getComputedStyle = originalGetComputedStyle;
+    }
+  });
+
+  const styleString = 'url("https://example.com/assets/bg.png")';
+  const element = {
+    style: {
+      backgroundImage: styleString,
+    },
+  };
+
+  global.getComputedStyle = () => ({ backgroundImage: styleString });
+
+  const warnings = [];
+  await inlineBackgroundImage(element, warnings);
+
+  assert.strictEqual(fetchCalls, 1);
+  assert.deepStrictEqual(warnings, []);
+  assert.ok(
+    element.style.backgroundImage.includes('data:image/png;base64,canvasbg'),
+    'background should be replaced with canvas data URI'
+  );
 });
