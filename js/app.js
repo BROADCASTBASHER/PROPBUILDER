@@ -986,7 +986,14 @@ function initializeApp() {
       const priceValue = Number.isFinite(Number(item.price)) ? Number(item.price) : 0;
       const baseTotal = qtyValue > 0 ? priceValue * qtyValue : priceValue;
       const displayTotal = state.pricing.gst === "inc" ? baseTotal * 1.1 : baseTotal;
-      const priceText = baseTotal > 0 ? toCurrency(displayTotal) : (priceValue > 0 ? toCurrency(displayTotal) : '');
+      let priceText = '';
+      if (baseTotal > 0) {
+        priceText = toCurrency(displayTotal);
+      } else if (priceValue > 0) {
+        priceText = toCurrency(displayTotal);
+      } else {
+        priceText = 'Included';
+      }
 
       return `<tr><td>${label || '&nbsp;'}</td><td>${qtyText || '&nbsp;'}</td><td>${unit || '&nbsp;'}</td><td>${priceText ? esc(priceText) : '&nbsp;'}</td></tr>`;
     });
