@@ -424,7 +424,7 @@ function buildEmailHTML() {
     return '';
   }
 
-  const escapeHTML = (value) => {
+  const safe = (value) => {
     const raw = String(value == null ? '' : value);
     if (typeof esc === 'function') {
       return esc(raw);
@@ -437,474 +437,294 @@ function buildEmailHTML() {
       .replace(/'/g, '&#39;');
   };
 
-  const parseSizeValue = (value, fallbackWidth, fallbackHeight) => {
-    if (typeof parseSize === 'function') {
-      const result = parseSize(value, fallbackWidth, fallbackHeight);
-      if (Array.isArray(result)) {
-        return result;
-      }
-    }
-    const defaults = [fallbackWidth, fallbackHeight];
-    if (value == null) {
-      return defaults;
-    }
-    const match = String(value).trim().toLowerCase().match(/^(\d+)(?:\s*[x×]\s*(\d+))?$/);
-    if (!match) {
-      return defaults;
-    }
-    const width = Number.parseInt(match[1], 10);
-    const height = match[2] ? Number.parseInt(match[2], 10) : width;
-    return [Number.isFinite(width) ? width : defaults[0], Number.isFinite(height) ? height : (Number.isFinite(width) ? width : defaults[1])];
-  };
-
-  const normaliseCard = (card, defaults) => {
-    if (!card || typeof card !== 'object') {
-      return null;
-    }
-    const title = String(card.t ?? card.title ?? '').trim();
-    const copy = String(card.c ?? card.copy ?? '').trim();
-    const image = String(card.img ?? card.image ?? '').trim();
-    const hero = Boolean(card.hero);
-    const size = parseSizeValue(card.size ?? card.dimensions ?? card.imgSize ?? '', defaults[0], defaults[1]);
-    const baseSize = Number(card.size) || size[0];
-    const iconSize = clampIconSizeValue(baseSize, hero);
-    if (!title && !copy && !image) {
-      return null;
-    }
-    return { title, copy, image, width: size[0], height: size[1], hero, iconSize };
-  };
-
-  const readJSON = (key) => {
-    if (typeof localStorage === 'undefined') {
-      return null;
-    }
-    try {
-      const raw = localStorage.getItem(key);
-      if (!raw) {
-        return null;
-      }
-      return JSON.parse(raw);
-    } catch (error) {
-      return null;
-    }
-  };
-
-  const readHeroCards = () => {
-    const stored = readJSON('heroCards');
-    if (Array.isArray(stored) && stored.length) {
-      return stored.map((card) => normaliseCard(card, [320, 180])).filter(Boolean);
-    }
-    if (typeof window !== 'undefined' && Array.isArray(window._heroCards)) {
-      return window._heroCards.map((card) => normaliseCard(card, [320, 180])).filter(Boolean);
-    }
-    return [];
-  };
-
-  const readFeatures = () => {
-    if (typeof window === 'undefined' || !Array.isArray(window._features)) {
-      return [];
-    }
-    return window._features.map((card) => normaliseCard(card, [260, 180])).filter(Boolean);
-  };
-
-  const readPriceRows = () => {
-    const table = document.getElementById('priceTableView');
-    if (!table || typeof table.querySelectorAll !== 'function') {
-      return [];
-    }
-    const rows = table.querySelectorAll('tbody tr');
-    if (!rows || !rows.length) {
-      return [];
-    }
-    const output = [];
-    for (const row of rows) {
-      if (!row || typeof row.querySelectorAll !== 'function') {
-        continue;
-      }
-      const cells = row.querySelectorAll('td');
-      if (!cells || !cells.length) {
-        continue;
-      }
-      output.push(Array.from(cells).map((cell) => escapeHTML(cell && cell.textContent ? cell.textContent.trim() : '')));
-    }
-    return output;
-  };
-
-  const readFeaturesHeader = () => {
-    const header = document.getElementById('featuresPreviewHeader');
-    if (!header || typeof header.querySelector !== 'function') {
-      return { title: '', subtitle: '', legend: '' };
-    }
-    const readPart = (selector) => {
-      const node = header.querySelector(selector);
-      if (!node || typeof node.textContent !== 'string') {
-        return '';
-      }
-      return node.textContent.trim();
-    };
-    return {
-      title: readPart('.title'),
-      subtitle: readPart('.subtitle'),
-      legend: readPart('.legend')
-    };
-  };
-
-  const heroImageData = (() => {
-    const canvas = document.getElementById('banner');
-    if (canvas && typeof canvas.toDataURL === 'function') {
-      try {
-        const data = canvas.toDataURL('image/png');
-        if (data) {
-          return data;
-        }
-      } catch (error) {
-        // ignore canvas read failures
-      }
-    }
-    const img = document.querySelector('#tab-preview .hero img, #pageBanner, #pageBanner2, img#heroPreview');
-    if (img && img.src) {
-      return img.src;
-    }
-    return '';
-  })();
-
-  const toHex = (color) => {
-    const match = String(color == null ? '' : color).match(/rgba?\s*\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/i);
-    if (!match) {
-      return color ? String(color) : '#E5E6EA';
-    }
-    const clamp = (value) => {
-      const n = Number.parseInt(value, 10);
-      const safe = Number.isFinite(n) ? Math.max(0, Math.min(255, n)) : 0;
-      const hex = safe.toString(16).toUpperCase();
-      return hex.length === 1 ? `0${hex}` : hex;
-    };
-    return `#${clamp(match[1])}${clamp(match[2])}${clamp(match[3])}`;
-  };
-
-  const getText = (id) => {
-    const el = document.getElementById(id);
-    if (!el || typeof el.textContent !== 'string') {
+  const textFrom = (id) => {
+    const node = document.getElementById(id);
+    if (!node || typeof node.textContent !== 'string') {
       return '';
     }
-    const className = typeof el.className === 'string' ? el.className : '';
-    if ((typeof el.classList === 'object' && typeof el.classList.contains === 'function'
-        && (el.classList.contains('no-print') || el.classList.contains('legal-footer')))
-      || /\b(no-print|legal-footer)\b/.test(className)) {
-      return '';
-    }
-    return el.textContent.trim();
+    return node.textContent.trim();
   };
 
-  const customer = getText('pvCustomer');
-  const referenceRaw = getText('pvRef');
-  const referenceLine = referenceRaw
-    ? (referenceRaw.trim().toLowerCase().startsWith('ref') ? referenceRaw : `Ref: ${referenceRaw}`)
+  const listText = (selector) => Array.from(document.querySelectorAll(selector))
+    .map((node) => (node && typeof node.textContent === 'string') ? node.textContent.trim() : '')
+    .filter((value) => value.length > 0);
+
+  const heroImage = getHeroImageData();
+  const preset = (typeof PRESETS === 'object' && PRESETS && state && PRESETS[state.preset])
+    || (PRESETS && PRESETS.navy)
+    || { bg: '#FAF7F3', headline: '#122B5C', panel: '#FFFFFF' };
+  const backgroundColor = preset && preset.bg ? preset.bg : '#FAF7F3';
+  const headlineColor = preset && preset.headline ? preset.headline : '#122B5C';
+
+  const logoMap = (typeof window !== 'undefined' && window.__LOGO_DATA__ && typeof window.__LOGO_DATA__ === 'object')
+    ? window.__LOGO_DATA__
+    : {};
+
+  const resolveLogoKey = (requested) => {
+    if (!requested || requested === 'auto') {
+      if (preset && preset.logo) {
+        return preset.logo;
+      }
+      if (PRESETS && PRESETS.navy && PRESETS.navy.logo) {
+        return PRESETS.navy.logo;
+      }
+      return '';
+    }
+    if (typeof LOGO_ALIASES === 'object' && LOGO_ALIASES && LOGO_ALIASES[requested]) {
+      return LOGO_ALIASES[requested];
+    }
+    return requested;
+  };
+
+  const resolveLogoSrc = () => {
+    const requested = state && state.banner ? state.banner.logoMode : 'auto';
+    const key = resolveLogoKey(requested);
+    if (key && logoMap[key]) {
+      return logoMap[key];
+    }
+    const fallback = PRESETS && PRESETS.navy && PRESETS.navy.logo;
+    if (fallback && logoMap[fallback]) {
+      return logoMap[fallback];
+    }
+    const keys = Object.keys(logoMap);
+    return keys.length ? logoMap[keys[0]] : '';
+  };
+
+  const logoSrc = resolveLogoSrc();
+
+  const customer = textFrom('pvCustomer');
+  const referenceRaw = textFrom('pvRef');
+  const reference = referenceRaw
+    ? (referenceRaw.toLowerCase().startsWith('ref') ? referenceRaw : `Ref: ${referenceRaw}`)
     : '';
-  const heroTitle = getText('pvHero');
-  const heroSubtitle = getText('pvSub');
-  const summary = getText('pvSummary');
-  const term = getText('pvTerm2') || getText('exportTerm');
-  const monthlyRaw = getText('pvMonthly');
+  const heroTitle = textFrom('pvHero');
+  const heroSubtitle = textFrom('pvSub');
+
+  const summaryRaw = textFrom('pvSummary');
+  const summaryHtml = summaryRaw
+    ? `<p style="margin:0;font-size:15px;line-height:1.6;color:#2C3440;">${safe(summaryRaw)
+      .replace(/\n{2,}/g, '</p><p style="margin:12px 0 0;font-size:15px;line-height:1.6;color:#2C3440;">')
+      .replace(/\n/g, '<br>')}</p>`
+    : '';
+
+  const benefits = listText('#pvBenefits li');
+  const benefitsHtml = benefits.length
+    ? `<ul style="margin:0;padding-left:18px;font-size:15px;line-height:1.6;color:#2C3440;">${benefits.map((item) => `<li>${safe(item)}</li>`).join('')}</ul>`
+    : '';
+
+  const monthlyRaw = textFrom('pvMonthly');
   const monthlyDetails = (() => {
     if (!monthlyRaw) {
       return { amount: '', gst: '' };
     }
-    const compact = monthlyRaw.replace(/\s+/g, ' ').trim();
-    if (!compact) {
-      return { amount: '', gst: '' };
-    }
-    const gstMatch = compact.match(/\b(inc|ex)\s+gst\b/i);
-    if (!gstMatch) {
-      return { amount: compact, gst: '' };
-    }
-    const gstMode = gstMatch[1].toLowerCase() === 'inc' ? 'inc GST' : 'ex GST';
-    const amount = compact
-      .replace(gstMatch[0], '')
-      .replace(/\(\s*\)/g, '')
-      .replace(/\s{2,}/g, ' ')
-      .trim();
-    return { amount, gst: gstMode };
+    const match = monthlyRaw.match(/(inc|ex)\s+gst/i);
+    const amount = match
+      ? monthlyRaw.replace(match[0], '').replace(/\s{2,}/g, ' ').trim()
+      : monthlyRaw.trim();
+    const gst = match ? (match[1].toLowerCase() === 'inc' ? 'INC GST' : 'EX GST') : '';
+    return { amount, gst };
   })();
-  const benefitsNode = document.getElementById('pvBenefits');
-  const benefitsList = benefitsNode && typeof benefitsNode.innerHTML === 'string' ? benefitsNode.innerHTML.trim() : '';
-  const assumptions = Array.from(document.querySelectorAll('#assumptions li'))
-    .map((node) => escapeHTML(node && node.textContent ? node.textContent.trim() : ''))
-    .filter((text) => text.length > 0);
-  const heroHighlights = readHeroCards().map((card) => Object.assign({}, card, { hero: true }));
-  const featureCards = readFeatures();
-  const allFeatures = heroHighlights.concat(featureCards);
-  const heroFeatures = allFeatures.filter((feature) => feature.hero);
-  const standardFeatures = allFeatures.filter((feature) => !feature.hero);
-  const hasStandardFeatures = standardFeatures.length > 0;
-  const priceRows = readPriceRows();
-  const featuresHeader = readFeaturesHeader();
-  const hasHeroFeature = heroFeatures.length > 0;
+
+  const term = textFrom('pvTerm2') || textFrom('exportTerm');
+  const assumptions = listText('#assumptions li');
+
+  const priceRows = getPriceRows();
+  const priceModeLabel = state && state.pricing && state.pricing.gst === 'inc'
+    ? 'Price (inc GST)'
+    : 'Price (ex GST)';
+
+  const rawFeatures = Array.isArray(state && state.features) && state.features.length
+    ? state.features
+    : (typeof window !== 'undefined' && Array.isArray(window._features) ? window._features : []);
+
+  const features = rawFeatures
+    .map((feature) => ({
+      title: String(feature.t ?? feature.title ?? '').trim(),
+      copy: String(feature.c ?? feature.copy ?? '').trim(),
+      image: String(feature.img ?? feature.image ?? '').trim(),
+      hero: Boolean(feature.hero),
+      size: Number(feature.size) || 0
+    }))
+    .filter((feature) => feature.title || feature.copy || feature.image);
+
+  const heroFeatures = features.filter((feature) => feature.hero);
+  const standardFeatures = features.filter((feature) => !feature.hero);
 
   const renderFeatureCopy = (text) => {
     if (!text) {
       return '';
     }
-    if (text.includes('\n') && typeof bulletify === 'function') {
-      const bullets = bulletify(text);
+    if (text.includes('\n')) {
+      const bullets = typeof bulletify === 'function' ? bulletify(text) : '';
       if (bullets) {
-        return `<ul style="margin:0;padding-left:20px;font-size:15px;line-height:1.6;color:#2C3440;">${bullets}</ul>`;
+        return `<ul style="margin:0;padding-left:18px;font-size:14px;line-height:1.6;color:#2C3440;">${bullets}</ul>`;
       }
     }
-    return `<div style="margin:0;font-size:15px;line-height:1.6;color:#2C3440;">${escapeHTML(text)}</div>`;
+    return `<p style="margin:0;font-size:14px;line-height:1.6;color:#2C3440;">${safe(text).replace(/\n/g, '<br>')}</p>`;
   };
 
-  const renderFeatureCard = (feature, options = {}) => {
+  const renderFeatureCard = (feature, heroMode) => {
     if (!feature) {
       return '';
     }
-    const { forceHero = false, badgeText = '' } = options;
-    const { title, copy, image } = feature;
-    const hero = forceHero || Boolean(feature.hero);
-    const iconSize = clampIconSizeValue(feature.iconSize ?? feature.height ?? 80, hero);
-    const bodyParts = [];
-    const badgeMarkup = badgeText
-      ? `<span style="display:inline-block;padding:4px 10px;border-radius:999px;background:#EEF2FF;color:#122B5C;font-weight:700;font-size:11px;letter-spacing:0.08em;text-transform:uppercase;">${escapeHTML(badgeText)}</span>`
+    const title = feature.title
+      ? `<div style="font-size:18px;font-weight:700;margin:0 0 8px;color:#0B1220;">${safe(feature.title)}</div>`
       : '';
-    if (badgeMarkup) {
-      bodyParts.push(`<div style="margin:0 0 8px;">${badgeMarkup}</div>`);
-    }
-    if (title) {
-      bodyParts.push(`<div style="font-size:18px;font-weight:700;margin:0 0 8px;color:#0B1220;">${escapeHTML(title)}</div>`);
-    }
-    const copyMarkup = renderFeatureCopy(copy);
-    if (copyMarkup) {
-      bodyParts.push(copyMarkup);
-    }
-
-    if (!bodyParts.length && !image) {
+    const copy = renderFeatureCopy(feature.copy);
+    const imageMarkup = feature.image
+      ? `<img src="${safe(feature.image)}" alt="${safe(feature.title || 'Feature image')}" style="display:block;width:${heroMode ? '100%' : '64px'};height:auto;max-height:${heroMode ? '220px' : '64px'};border-radius:${heroMode ? '18px' : '0'};object-fit:${heroMode ? 'cover' : 'contain'};">`
+      : '';
+    if (!title && !copy && !imageMarkup) {
       return '';
     }
-
-    const cardParts = [];
-    cardParts.push('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;">');
-
-    let heroImageRendered = false;
-    if (hero && image && Math.max(Number(feature.width) || 0, Number(feature.height) || 0) > 200) {
-      const heroHeight = Math.max(140, clampIconSizeValue(feature.iconSize ?? feature.height ?? 220, true));
-      cardParts.push(`<tr><td style="padding:0 0 16px;" colspan="2"><img src="${escapeHTML(image)}" alt="${escapeHTML(title || 'Feature image')}" style="display:block;width:100%;height:auto;max-height:${heroHeight}px;border-radius:18px;object-fit:cover;"></td></tr>`);
-      heroImageRendered = true;
+    if (heroMode) {
+      const heroRows = [];
+      if (imageMarkup) {
+        heroRows.push(`<tr><td style="padding:0 0 16px;"><div style="overflow:hidden;border-radius:18px;">${imageMarkup}</div></td></tr>`);
+      }
+      heroRows.push(`<tr><td style="padding:0 20px 20px;">${title}${copy}</td></tr>`);
+      return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;border:1px solid #D7DBE7;border-radius:18px;background:#FFFFFF;">${heroRows.join('')}</table>`;
     }
-
-    if (hero) {
-      const heroContent = [];
-      if (!heroImageRendered && image) {
-        heroContent.push(`<div style="margin:0 0 16px;"><img src="${escapeHTML(image)}" alt="${escapeHTML(title || 'Feature icon')}" style="display:block;width:100%;height:auto;max-height:${iconSize}px;object-fit:contain;"></div>`);
-      }
-      if (bodyParts.length) {
-        heroContent.push(bodyParts.join(''));
-      }
-      if (heroContent.length) {
-        cardParts.push(`<tr><td style="padding:0;" colspan="2">${heroContent.join('')}</td></tr>`);
-      }
-    } else {
-      const iconCell = image
-        ? `<img src="${escapeHTML(image)}" alt="${escapeHTML(title || 'Feature icon')}" style="display:block;width:100%;height:auto;max-height:${iconSize}px;">`
-        : '&nbsp;';
-      cardParts.push('<tr>');
-      cardParts.push(`<td style="width:80px;padding:0 16px 0 0;vertical-align:top;">${iconCell}</td>`);
-      cardParts.push(`<td style="vertical-align:top;">${bodyParts.join('')}</td>`);
-      cardParts.push('</tr>');
-    }
-    cardParts.push('</table>');
-
-    return `<div style="border:1px solid #D7DBE7;border-radius:18px;padding:20px;background:#FFFFFF;">${cardParts.join('')}</div>`;
+    return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;border:1px solid #D7DBE7;border-radius:18px;background:#FFFFFF;"><tr><td style="width:72px;padding:20px 0 20px 20px;vertical-align:top;">${imageMarkup || '&nbsp;'}</td><td style="padding:20px;vertical-align:top;">${title || copy ? `${title}${copy}` : '&nbsp;'}</td></tr></table>`;
   };
 
-  const renderFeatureGrid = (features, options = {}) => {
-    if (!features.length) {
-      return '';
-    }
-    const { heroBadge = '' } = options;
+  const renderFeatureGrid = () => {
     const rows = [];
-    const standardFeatures = [];
-    for (const feature of features) {
-      if (feature.hero) {
-        rows.push(`<tr><td colspan="2" style="padding:0 0 16px;">${renderFeatureCard(feature, { forceHero: true, badgeText: heroBadge })}</td></tr>`);
-      } else {
-        standardFeatures.push(feature);
+    for (const feature of heroFeatures) {
+      const card = renderFeatureCard(feature, true);
+      if (card) {
+        rows.push(`<tr><td colspan="2" style="padding:0 0 16px;">${card}</td></tr>`);
       }
     }
     for (let i = 0; i < standardFeatures.length; i += 2) {
-      const left = renderFeatureCard(standardFeatures[i]);
+      const left = renderFeatureCard(standardFeatures[i], false);
       const rightFeature = standardFeatures[i + 1];
-      const right = rightFeature ? renderFeatureCard(rightFeature) : '';
-      rows.push(`<tr><td style="padding:0 8px 16px 0;width:50%;vertical-align:top;">${left}</td><td style="padding:0 0 16px 8px;width:50%;vertical-align:top;">${right || '&nbsp;'}</td></tr>`);
+      const right = rightFeature ? renderFeatureCard(rightFeature, false) : '';
+      if (left || right) {
+        rows.push(`<tr><td style="padding:0 8px 16px 0;vertical-align:top;width:50%;">${left || '&nbsp;'}</td><td style="padding:0 0 16px 8px;vertical-align:top;width:50%;">${right || '&nbsp;'}</td></tr>`);
+      }
     }
-    return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;">${rows.join('')}</table>`;
-  };
-
-  const renderKeyFeatureStack = (features) => {
-    if (!features.length) {
+    if (!rows.length) {
       return '';
     }
-    const rows = features.map((feature) => `<tr><td style="padding:0 0 16px;">${renderFeatureCard(feature, { forceHero: true, badgeText: 'Key feature' })}</td></tr>`);
     return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;">${rows.join('')}</table>`;
   };
 
-  const hasSummary = Boolean(summary);
-  const hasBenefits = Boolean(benefitsList);
-  const hasFeatures = hasHeroFeature || hasStandardFeatures;
-  const hasPricingSummary = Boolean(term) || Boolean(monthlyDetails.amount);
-  const hasAssumptions = assumptions.length > 0;
+  const featureGrid = renderFeatureGrid();
 
-  const out = [];
-  out.push('<!doctype html><html lang="en"><head><meta charset="utf-8">');
-  out.push('<meta name="viewport" content="width=device-width,initial-scale=1">');
-  out.push('<title>TBTC VIC EAST Proposal Studio</title>');
-  out.push('<style>img{border:0;display:block;}@media (prefers-color-scheme:dark){body{background:#0B1220 !important;}}</style>');
-  out.push(`</head><body style="margin:0;padding:0;background:#F5F2EC;color:#0B1220;font-family:'TelstraText',Arial,sans-serif;">`);
-  out.push('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;background:#F5F2EC;">');
-  out.push('<tr><td align="center" style="padding:32px 16px;">');
-  out.push('<table role="presentation" width="720" cellpadding="0" cellspacing="0" style="width:100%;max-width:720px;border-collapse:separate;">');
-  out.push('<tr><td style="padding:0;">');
-  out.push('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;background:#FFFFFF;border-radius:28px;overflow:hidden;box-shadow:0 18px 60px rgba(11,18,32,0.16);">');
-  out.push('<tr><td style="padding:32px 28px;">');
-
-  if (heroImageData) {
-    out.push(`<div style="margin:0 0 24px;"><img src="${escapeHTML(heroImageData)}" alt="Banner" style="width:100%;height:auto;border-radius:20px;display:block;"></div>`);
+  let overviewSection = '';
+  if (summaryHtml || benefitsHtml) {
+    const cells = [];
+    if (summaryHtml) {
+      cells.push(`<td style="width:${benefitsHtml ? '50%' : '100%'};padding:0 ${benefitsHtml ? '12px' : '0'} 0 0;vertical-align:top;"><div style="font-weight:700;font-size:18px;color:#0B1220;margin:0 0 8px;">Executive summary</div>${summaryHtml}</td>`);
+    }
+    if (benefitsHtml) {
+      cells.push(`<td style="width:${summaryHtml ? '50%' : '100%'};padding:0 0 0 ${summaryHtml ? '12px' : '0'};vertical-align:top;"><div style="font-weight:700;font-size:18px;color:#0B1220;margin:0 0 8px;">Key benefits</div>${benefitsHtml}</td>`);
+    }
+    overviewSection = `<tr><td style="padding:0 0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;background:#FFFFFF;border:1px solid #E0E4F2;border-radius:24px;padding:24px;"><tr>${cells.join('')}</tr></table></td></tr>`;
   }
 
-  if (heroTitle) {
-    out.push(`<div style="font-size:28px;font-weight:800;line-height:1.2;margin:0 0 12px;">${escapeHTML(heroTitle)}</div>`);
+  let featuresSection = '';
+  if (featureGrid) {
+    featuresSection = `<tr><td style="padding:0 0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;background:#FFFFFF;border:1px solid #E0E4F2;border-radius:24px;padding:24px;"><tr><td style="font-weight:800;font-size:20px;color:#0B1220;">Features &amp; highlights</td></tr><tr><td style="padding:16px 0 0;">${featureGrid}</td></tr></table></td></tr>`;
+  }
+
+  let pricingTable = '';
+  if (priceRows.length) {
+    const headerCells = ['Item', 'Qty', 'Unit', priceModeLabel]
+      .map((label) => `<th style="padding:10px 12px;font-size:12px;text-transform:uppercase;letter-spacing:0.08em;color:#5B6573;background:#F6F8FB;text-align:left;">${safe(label)}</th>`)
+      .join('');
+    const bodyRows = priceRows
+      .map((row) => `<tr>${row.map((cell) => `<td style="padding:10px 12px;border-top:1px solid #E5E6EA;font-size:14px;color:#2C3440;">${cell || '&nbsp;'}</td>`).join('')}</tr>`)
+      .join('');
+    const fallbackRow = `<tr><td colspan="4" style="padding:12px;font-size:14px;color:#5B6573;">Add line items to populate pricing.</td></tr>`;
+    pricingTable = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;border:1px solid #E5E6EA;border-radius:14px;overflow:hidden;"><thead><tr>${headerCells}</tr></thead><tbody>${bodyRows || fallbackRow}</tbody></table>`;
+  }
+
+  const assumptionsHtml = assumptions.length
+    ? `<div style="border:1px solid #D7DBE7;border-radius:16px;padding:16px;background:#FFFFFF;"><div style="font-weight:700;font-size:16px;color:#0B1220;margin:0 0 8px;">Commercial terms &amp; dependencies</div><ul style="margin:0;padding-left:18px;font-size:14px;line-height:1.6;color:#2C3440;">${assumptions.map((item) => `<li>${safe(item)}</li>`).join('')}</ul></div>`
+    : '';
+
+  const highlightCells = [];
+  if (monthlyDetails.amount || term) {
+    highlightCells.push(`<td style="padding:0 ${assumptionsHtml ? '16px' : '0'} 0 0;vertical-align:top;width:${assumptionsHtml ? '50%' : '100%'};"><div style="border:1px solid #D7DBE7;border-radius:16px;padding:16px;background:#FFFFFF;"><div style="font-weight:700;font-size:16px;color:#0B1220;margin:0 0 8px;">Monthly investment</div>${monthlyDetails.amount ? `<div style="font-size:30px;font-weight:800;color:#122B5C;">${safe(monthlyDetails.amount)}</div>` : ''}${monthlyDetails.gst ? `<div style="margin-top:4px;font-size:12px;color:#5B6573;letter-spacing:0.08em;text-transform:uppercase;">${safe(monthlyDetails.gst)}</div>` : ''}${term ? `<div style="margin-top:12px;font-size:14px;color:#2C3440;">${safe(term)}</div>` : ''}</div></td>`);
+  }
+  if (assumptionsHtml) {
+    highlightCells.push(`<td style="padding:0 0 0 ${monthlyDetails.amount || term ? '16px' : '0'};vertical-align:top;width:${monthlyDetails.amount || term ? '50%' : '100%'};">${assumptionsHtml}</td>`);
+  }
+
+  let pricingSection = '';
+  if (pricingTable || highlightCells.length) {
+    pricingSection = `<tr><td style="padding:0 0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;background:#FFFFFF;border:1px solid #E0E4F2;border-radius:24px;padding:24px;"><tr><td style="font-weight:800;font-size:20px;color:#0B1220;">Investment overview</td></tr>${pricingTable ? `<tr><td style="padding:20px 0 0;">${pricingTable}</td></tr>` : ''}${highlightCells.length ? `<tr><td style="padding:24px 0 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;"><tr>${highlightCells.join('')}</tr></table></td></tr>` : ''}</table></td></tr>`;
   }
 
   const identityParts = [];
   if (customer) {
-    identityParts.push(`<div style="font-weight:800;font-size:20px;">${escapeHTML(customer)}</div>`);
+    identityParts.push(`<div style="font-size:16px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;margin:0;color:${headlineColor};">${safe(customer)}</div>`);
   }
-  if (referenceLine) {
-    identityParts.push(`<span style="display:inline-block;padding:6px 14px;border-radius:999px;background:#EEF2FF;color:#122B5C;font-weight:700;font-size:13px;letter-spacing:0.06em;text-transform:uppercase;">${escapeHTML(referenceLine)}</span>`);
+  if (reference) {
+    identityParts.push(`<div style="margin-top:6px;font-size:13px;letter-spacing:0.08em;text-transform:uppercase;color:${headlineColor};opacity:0.85;">${safe(reference)}</div>`);
   }
-  if (identityParts.length) {
-    const identityMargin = heroSubtitle ? '12px' : '24px';
-    out.push(`<div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;margin:0 0 ${identityMargin};">${identityParts.join('')}</div>`);
+  if (heroTitle) {
+    identityParts.push(`<div style="margin-top:12px;font-size:28px;font-weight:800;line-height:1.25;color:${headlineColor};">${safe(heroTitle)}</div>`);
   }
-
   if (heroSubtitle) {
-    out.push(`<div style="font-size:18px;line-height:1.5;color:#5B6573;margin:0 0 24px;">${escapeHTML(heroSubtitle)}</div>`);
+    identityParts.push(`<div style="margin-top:8px;font-size:17px;line-height:1.5;color:${headlineColor};opacity:0.9;">${safe(heroSubtitle)}</div>`);
+  }
+  const identityHtml = identityParts.join('');
+
+  let heroHeaderRow = '';
+  if (identityHtml || logoSrc) {
+    const logoBlock = logoSrc ? `<td style="width:160px;vertical-align:top;text-align:right;"><img src="${safe(logoSrc)}" alt="Telstra logo" style="display:block;max-width:140px;height:auto;"></td>` : '';
+    heroHeaderRow = `<tr><td style="padding:28px 32px 32px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;"><tr><td style="vertical-align:top;">${identityHtml || '&nbsp;'}</td>${logoBlock}</tr></table></td></tr>`;
   }
 
-  if (hasSummary || hasBenefits) {
-    if (hasSummary && hasBenefits) {
-      out.push('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;margin:0 0 24px;">');
-      out.push('<tr>');
-      out.push('<td style="width:50%;padding:0 12px 0 0;vertical-align:top;">');
-      out.push('<div style="border:1px solid #D7DBE7;border-radius:18px;padding:20px;background:#FFFFFF;">');
-      out.push('<div style="font-size:18px;font-weight:700;margin:0 0 8px;">Executive summary</div>');
-      out.push(`<div style="font-size:16px;line-height:1.6;margin:0;">${escapeHTML(summary)}</div>`);
-      out.push('</div></td>');
-      out.push('<td style="width:50%;padding:0 0 0 12px;vertical-align:top;">');
-      out.push('<div style="border:1px solid #D7DBE7;border-radius:18px;padding:20px;background:#FFFFFF;">');
-      out.push('<div style="font-size:18px;font-weight:700;margin:0 0 8px;">Key benefits</div>');
-      out.push(`<ul style="margin:0;padding-left:20px;font-size:16px;line-height:1.6;color:#2C3440;">${benefitsList}</ul>`);
-      out.push('</div></td>');
-      out.push('</tr></table>');
-    } else if (hasSummary) {
-      out.push('<div style="border:1px solid #D7DBE7;border-radius:18px;padding:20px;background:#FFFFFF;margin:0 0 24px;">');
-      out.push('<div style="font-size:18px;font-weight:700;margin:0 0 8px;">Executive summary</div>');
-      out.push(`<div style="font-size:16px;line-height:1.6;margin:0;">${escapeHTML(summary)}</div>`);
-      out.push('</div>');
-    } else if (hasBenefits) {
-      out.push('<div style="border:1px solid #D7DBE7;border-radius:18px;padding:20px;background:#FFFFFF;margin:0 0 24px;">');
-      out.push('<div style="font-size:18px;font-weight:700;margin:0 0 8px;">Key benefits</div>');
-      out.push(`<ul style="margin:0;padding-left:20px;font-size:16px;line-height:1.6;color:#2C3440;">${benefitsList}</ul>`);
-      out.push('</div>');
-    }
+  const heroRows = [];
+  if (heroImage) {
+    heroRows.push(`<tr><td><img src="${safe(heroImage)}" alt="${safe(heroTitle || 'Banner image')}" style="display:block;width:100%;height:auto;"></td></tr>`);
+  }
+  if (heroHeaderRow) {
+    heroRows.push(heroHeaderRow);
   }
 
-  if (hasFeatures) {
-    const titleText = featuresHeader.title ? escapeHTML(featuresHeader.title) : 'Features &amp; benefits';
-    const subtitleText = featuresHeader.subtitle ? `<div style="font-size:14px;font-weight:600;letter-spacing:0.04em;color:#5B6573;margin:2px 0 0;text-transform:uppercase;">${escapeHTML(featuresHeader.subtitle)}</div>` : '';
-    const legendText = hasHeroFeature && featuresHeader.legend
-      ? `<div style="font-size:13px;color:#5B6573;margin:12px 0 0;">${escapeHTML(featuresHeader.legend)}</div>`
-      : '';
-    out.push('<div style="margin:32px 0;">');
-    out.push(`<div style="font-size:20px;font-weight:800;margin:0 0 4px;">${titleText}</div>`);
-    if (subtitleText) {
-      out.push(subtitleText);
-    }
-    if (legendText) {
-      out.push(legendText);
-    }
-    out.push(`<div style="margin-top:16px;">${renderFeatureGrid(allFeatures, { heroBadge: hasHeroFeature ? 'Key feature' : '' })}</div>`);
-    out.push('</div>');
-  }
+  const heroSection = heroRows.length
+    ? `<tr><td style="padding:0 0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;background:${backgroundColor};border-radius:28px;overflow:hidden;">${heroRows.join('')}</table></td></tr>`
+    : '';
 
-  if (heroFeatures.length) {
-    out.push('<div style="margin:32px 0;">');
-    out.push('<div style="font-size:20px;font-weight:800;margin:0 0 12px;">Key features</div>');
-    out.push(`<div style="margin-top:16px;">${renderKeyFeatureStack(heroFeatures)}</div>`);
-    out.push('</div>');
+  const docTitle = heroTitle || customer || 'Telstra Proposal';
+  const out = [];
+  out.push('<!doctype html>');
+  out.push('<html lang="en">');
+  out.push('<head>');
+  out.push('<meta charset="utf-8">');
+  out.push('<meta name="viewport" content="width=device-width,initial-scale=1">');
+  out.push(`<title>${safe(docTitle)}</title>`);
+  out.push('<style type="text/css">body{margin:0;background:#F4F6FB;}img{border:0;display:block;}table{border-collapse:collapse;}@media (prefers-color-scheme:dark){body{background:#0B1220!important;}}</style>');
+  out.push('</head>');
+  out.push(`<body style="margin:0;padding:0;background:#F4F6FB;font-family:'Telstra Text',Arial,sans-serif;color:#0B1220;">`);
+  out.push('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;background:#F4F6FB;padding:24px 0;">');
+  out.push('<tr><td align="center" style="padding:0 16px;">');
+  out.push('<table role="presentation" width="640" cellpadding="0" cellspacing="0" style="width:100%;max-width:640px;border-collapse:separate;">');
+  if (heroSection) {
+    out.push(heroSection);
   }
-
-  if (priceRows.length || hasPricingSummary || hasAssumptions) {
-    out.push('<div style="margin:32px 0;">');
-    out.push('<div style="font-size:22px;font-weight:800;margin:0 0 16px;">Inclusions &amp; pricing breakdown</div>');
-    if (priceRows.length) {
-      out.push('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;font-size:14px;">');
-      out.push('<thead><tr style="background:#EEF2FF;text-align:left;">');
-      out.push('<th style="padding:12px;border:1px solid #E1E6F2;font-weight:700;">Inclusion</th>');
-      out.push('<th style="padding:12px;border:1px solid #E1E6F2;font-weight:700;width:80px;">Qty</th>');
-      out.push('<th style="padding:12px;border:1px solid #E1E6F2;font-weight:700;width:80px;">Unit</th>');
-      out.push('<th style="padding:12px;border:1px solid #E1E6F2;font-weight:700;width:120px;">Total</th>');
-      out.push('</tr></thead><tbody>');
-      for (const row of priceRows) {
-        const [name = '', qty = '', unit = '', total = ''] = row;
-        out.push('<tr>');
-        out.push(`<td style="padding:12px;border:1px solid #E1E6F2;vertical-align:top;">${name}</td>`);
-        out.push(`<td style="padding:12px;border:1px solid #E1E6F2;vertical-align:top;">${qty}</td>`);
-        out.push(`<td style="padding:12px;border:1px solid #E1E6F2;vertical-align:top;">${unit}</td>`);
-        out.push(`<td style="padding:12px;border:1px solid #E1E6F2;vertical-align:top;">${total}</td>`);
-        out.push('</tr>');
-      }
-      out.push('</tbody></table>');
-    }
-    if (hasAssumptions || hasPricingSummary) {
-      out.push('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;margin:20px 0 0;">');
-      out.push('<tr>');
-      if (hasAssumptions) {
-        const rightPadding = hasPricingSummary ? '12px' : '0';
-        const width = hasPricingSummary ? '50%' : '100%';
-        out.push(`<td style="padding:0 ${rightPadding} 0 0;vertical-align:top;width:${width};">`);
-        out.push('<div style="font-weight:800;font-size:16px;margin:0 0 8px;color:#0B1220;">Commercial terms &amp; dependencies</div>');
-        out.push(`<ul style="margin:0;padding-left:20px;font-size:15px;line-height:1.6;color:#2C3440;">${assumptions.map((item) => `<li>${item}</li>`).join('')}</ul>`);
-        out.push('</td>');
-      }
-      if (hasPricingSummary) {
-        const width = hasAssumptions ? '50%' : '100%';
-        const monthlyText = monthlyDetails.amount
-          ? `${escapeHTML(monthlyDetails.amount)}${monthlyDetails.gst ? ` <span style="font-size:16px;font-weight:600;color:#5B6573;">${escapeHTML(monthlyDetails.gst)}</span>` : ''}`
-          : '';
-        out.push(`<td style="padding:0;vertical-align:top;width:${width};">`);
-        out.push('<div style="border:2px solid #F6F0E8;border-radius:16px;padding:16px;background:#FFFFFF;">');
-        out.push('<div style="font-size:14px;color:#5B6573;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Monthly investment</div>');
-        if (monthlyText) {
-          out.push(`<div style="font-size:28px;font-weight:800;margin:8px 0 4px;color:#0B1220;">${monthlyText}</div>`);
-        }
-        if (term) {
-          out.push(`<div style="font-size:14px;color:#5B6573;font-weight:600;">Term: ${escapeHTML(term)}</div>`);
-        }
-        out.push('</div>');
-        out.push('</td>');
-      }
-      out.push('</tr></table>');
-    }
-    out.push('</div>');
+  if (overviewSection) {
+    out.push(overviewSection);
   }
-
-  out.push('</td></tr></table>');
-  out.push('</td></tr></table>');
-  out.push('</td></tr></table>');
-  out.push('</body></html>');
+  if (featuresSection) {
+    out.push(featuresSection);
+  }
+  if (pricingSection) {
+    out.push(pricingSection);
+  }
+  out.push('<tr><td style="padding:12px 0 0;font-size:12px;color:#5B6573;text-align:center;">Prepared with the TBTC VIC EAST Proposal Studio.</td></tr>');
+  out.push('</table>');
+  out.push('</td></tr>');
+  out.push('</table>');
+  out.push('</body>');
+  out.push('</html>');
   return out.join('');
 }
-
 
 function initializeApp() {
   if (typeof document === 'undefined') {

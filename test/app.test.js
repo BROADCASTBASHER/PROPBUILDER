@@ -685,9 +685,7 @@ test('buildEmailHTML composes full export with escaped content and live data', (
       pvSub: createElement({ textContent: 'A tailored solution for growth' }),
       pvSummary: createElement({ textContent: 'Fast rollout <guaranteed> & scalable.' }),
       pvBenefits: createElement({ innerHTML: '<li>Rapid deployment</li><li>99.99% uptime</li>' }),
-      pvTotal: createElement({ textContent: '$12,345.60 ex GST' }),
       pvMonthly: createElement({ textContent: '$789.00 ex GST' }),
-      page2: createElement({ style: { display: 'block' } }),
       priceTableView: createElement({
         querySelectorAll(selector) {
           if (selector === 'tbody tr') {
@@ -702,18 +700,23 @@ test('buildEmailHTML composes full export with escaped content and live data', (
       '#tab-preview .hero img': createElement({ src: 'data:hero-image' }),
       '#tab-preview .price-card': createElement({ style: { backgroundColor: 'rgb(34, 51, 68)' } })
     },
-    features: [
-      { t: 'Network transformation', c: 'End-to-end managed service', img: 'https://cdn/img1.png', size: 64 },
-      { t: 'Employee experience', c: 'Boost morale\nImprove security', img: '', size: 48 }
-    ],
-    heroCards: [
-      { t: 'Hero Cloud', c: 'Elastic scale &lt;all year&gt;', img: 'https://cdn/hero space.png', size: 320 }
-    ],
+    queryAll: {
+      '#pvBenefits li': [
+        createElement({ textContent: 'Rapid deployment' }),
+        createElement({ textContent: '99.99% uptime' })
+      ]
+    },
     assumptions,
     presets: {
       test: { panel: '#334455' }
     },
-    state: { preset: 'test' }
+    state: {
+      preset: 'test',
+      features: [
+        { t: 'Network transformation', c: 'End-to-end managed service', img: 'https://cdn/img1.png', hero: true },
+        { t: 'Employee experience', c: 'Boost morale\nImprove security', img: '' }
+      ]
+    }
   }, () => buildEmailHTML());
 
   assert.ok(html.includes('TBTC VIC EAST Proposal Studio'));
@@ -726,27 +729,20 @@ test('buildEmailHTML composes full export with escaped content and live data', (
   assert.ok(html.includes('<li>Rapid deployment</li><li>99.99% uptime</li>'));
   assert.ok(html.includes('Boost morale'));
   assert.ok(html.includes('Improve security'));
-  assert.ok(html.includes('Features &amp; benefits'));
-  assert.ok(html.includes('Key feature'));
-  assert.ok(!html.includes('HERO FEATURE'));
-  assert.ok(html.indexOf('Modernise your workplace') < html.indexOf('Telstra Enterprise'));
-  assert.ok(!html.includes('(STANDARD FEATURES)'));
-  assert.ok(html.includes('Hero Cloud'));
-  assert.ok(html.includes('Elastic scale &amp;lt;all year&amp;gt;'));
-  assert.ok(html.includes('Fast rollout &lt;guaranteed&gt;'));
+  assert.ok(html.includes('Features &amp; highlights'));
+  assert.ok(html.includes('Network transformation'));
+  assert.ok(html.includes('End-to-end managed service'));
+  assert.ok(html.includes('Investment overview'));
   assert.ok(html.includes('Commercial terms &amp; dependencies'));
   assert.ok(html.includes('Payment due &amp; accepted &lt;net30&gt;'));
+  assert.ok(html.includes('Managed Service &amp; Support'));
+  assert.ok(html.includes('Price (ex GST)'));
   assert.ok(html.includes('$1,800.00'));
-  assert.ok(html.includes('Term: 24 months'));
   assert.ok(html.includes('Monthly investment'));
-  assert.ok(html.includes('$789.00 <span'));
-  assert.ok(html.includes('ex GST</span>'));
-  const pricingPos = html.indexOf('Inclusions &amp; pricing breakdown');
-  const keyFeaturesPos = html.indexOf('Key features');
-  const featuresPos = html.indexOf('Features &amp; benefits');
-  assert.ok(featuresPos >= 0 && keyFeaturesPos > featuresPos, 'Key features follow the features grid');
-  assert.ok(pricingPos >= 0 && keyFeaturesPos < pricingPos, 'Key features section appears before pricing breakdown');
-  assert.ok(html.lastIndexOf('Hero Cloud') > keyFeaturesPos, 'Key features section contains hero content');
+  assert.ok(html.includes('$789.00'));
+  assert.ok(html.includes('EX GST'));
+  assert.ok(html.includes('24 months'));
+  assert.ok(html.includes('Fast rollout &lt;guaranteed&gt;'));
   assert.ok(!html.includes('undefined'));
 });
 
@@ -760,18 +756,16 @@ test('buildEmailHTML tolerates missing optional sections without crashing', () =
       pvSummary: createElement({ textContent: 'Summary only.' }),
       page2: createElement({ style: { display: 'none' } })
     },
-    features: [],
-    heroCards: [],
-    assumptions: []
+    assumptions: [],
+    state: { features: [] }
   }, () => buildEmailHTML());
 
   assert.ok(html.includes('Minimal Co'));
   assert.ok(html.includes('Executive summary'));
   assert.ok(!html.includes('Key benefits</div><ul'));
-  assert.ok(!html.includes('Features &amp; benefits'));
-  assert.ok(!html.includes('Inclusions &amp; pricing breakdown'));
-  assert.ok(!html.includes('Key features'));
-  assert.ok(!html.includes('Monthly investment:'));
+  assert.ok(!html.includes('Features &amp; highlights'));
+  assert.ok(!html.includes('Investment overview'));
+  assert.ok(!html.includes('Monthly investment'));
   assert.ok(!html.includes('Commercial terms &amp; dependencies'));
   assert.ok(!html.includes('undefined'));
 });
