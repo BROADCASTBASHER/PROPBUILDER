@@ -24,6 +24,7 @@ const clone = (value) => {
 
 function createElement(overrides = {}) {
   const element = { style: {}, dataset: {}, children: [], _listeners: {}, className: '' };
+  const tagName = typeof overrides.tagName === 'string' ? overrides.tagName.toUpperCase() : '';
 
   let textContentValue = overrides.textContent ?? '';
   Object.defineProperty(element, 'textContent', {
@@ -58,7 +59,6 @@ function createElement(overrides = {}) {
   element.checked = overrides.checked ?? false;
   element.type = overrides.type ?? '';
   element.src = overrides.src ?? '';
-  element.toDataURL = overrides.toDataURL;
   element.classList = overrides.classList || {
     add() {},
     remove() {},
@@ -134,6 +134,16 @@ function createElement(overrides = {}) {
   element.click = function click() {
     this.dispatchEvent({ type: 'click', target: this });
   };
+
+  if (tagName === 'CANVAS') {
+    element.getContext = overrides.getContext || (() => ({ drawImage() {} }));
+    element.toDataURL = overrides.toDataURL
+      || ((...args) => (typeof global.__testCanvasToDataURL === 'function'
+        ? global.__testCanvasToDataURL(...args)
+        : 'data:image/png;base64,stub-canvas'));
+  } else if (typeof overrides.toDataURL === 'function') {
+    element.toDataURL = overrides.toDataURL;
+  }
 
   return Object.assign(element, overrides);
 }
@@ -679,6 +689,10 @@ function createFeatureCardStub({ title, copy = [], bullets = [], image }) {
       src: image,
       currentSrc: image,
       alt: title || 'Icon',
+      naturalWidth: 80,
+      naturalHeight: 80,
+      width: 80,
+      height: 80,
       parentElement: createElement({
         style: { width: '80px' },
         getBoundingClientRect: () => ({ width: 80 })
@@ -714,6 +728,59 @@ function createFeatureCardStub({ title, copy = [], bullets = [], image }) {
   }
   return card;
 }
+
+test('buildEmailHTML falls back to canvas data URIs when fetch fails', async () => {
+  const previousFetch = global.fetch;
+  const previousCanvasToDataURL = global.__testCanvasToDataURL;
+  let fetchAttempts = 0;
+  const canvasDataUri = 'data:image/png;base64,fallback-icon';
+  global.fetch = () => {
+    fetchAttempts += 1;
+    return Promise.reject(new Error('network down'));
+  };
+  global.__testCanvasToDataURL = () => canvasDataUri;
+
+  const featureCards = [createFeatureCardStub({
+    title: 'Fallback icon',
+    copy: ['Resilient experience'],
+    image: 'https://example.com/assets/icon.png'
+  })];
+
+  try {
+    const html = await withDocumentEnvironment({
+      ids: {
+        pvCustomer: createElement({ textContent: 'Fallback Co' }),
+        pvRef: createElement({ textContent: '' }),
+        pvHero: createElement({ textContent: 'Fallback hero' }),
+        pvSub: createElement({ textContent: '' }),
+        pvSummary: createElement({ textContent: 'Summary.' }),
+        pvBenefits: createElement({ textContent: '' }),
+        pvMonthly: createElement({ textContent: '' }),
+        pvTerm2: createElement({ textContent: '' }),
+        priceTableView: createElement({
+          querySelectorAll() {
+            return [];
+          }
+        }),
+        assumptions: createElement({ textContent: '' })
+      },
+      queryAll: {
+        '[data-export="features-standard"] [data-export-feature="card"][data-export-feature-type="standard"]': featureCards,
+        '[data-export="features-hero"] [data-export-feature="card"]': []
+      },
+      state: { features: [] }
+    }, () => buildEmailHTML());
+
+    assert.ok(fetchAttempts > 0, 'fetch should be attempted for feature icon');
+    const match = html.match(/<img src="(data:image[^"]+)" alt="Fallback icon"/);
+    assert.ok(match, 'feature icon should render with data URI source');
+    assert.ok(match[1].startsWith('data:image/'));
+    assert.strictEqual(match[1], canvasDataUri);
+  } finally {
+    global.fetch = previousFetch;
+    global.__testCanvasToDataURL = previousCanvasToDataURL;
+  }
+});
 
 test('buildEmailHTML composes full export with escaped content and live data', async () => {
   const benefitsItems = [

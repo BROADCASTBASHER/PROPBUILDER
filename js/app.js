@@ -517,28 +517,98 @@ async function buildEmailHTML() {
     return fallback || 0;
   };
 
-  const toDataUri = async (src) => {
-    if (!src || String(src).startsWith('data:')) {
-      return src || '';
+  const guessMimeFromUrl = (url) => {
+    const lower = String(url || '').split('?')[0].toLowerCase();
+    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
+      return 'image/jpeg';
     }
-    if (imageCache.has(src)) {
-      return imageCache.get(src);
+    if (lower.endsWith('.webp')) {
+      return 'image/webp';
     }
-    let absolute = src;
+    return 'image/png';
+  };
+
+  const toDataUri = async (img, source) => {
+    const rawSrc = source || (img ? (img.currentSrc || img.src) : '');
+    if (!rawSrc) {
+      return '';
+    }
+    if (String(rawSrc).startsWith('data:')) {
+      return rawSrc;
+    }
+
+    let absolute = rawSrc;
     try {
-      absolute = new URL(src, doc.baseURI).href;
+      const base = (doc && (doc.baseURI || doc.URL)) || (typeof window !== 'undefined' && window.location ? window.location.href : undefined);
+      absolute = base ? new URL(rawSrc, base).href : new URL(rawSrc).href;
     } catch (error) {
-      absolute = src;
+      absolute = rawSrc;
     }
+
+    const cacheKeys = [rawSrc, absolute].filter((value, index, array) => value && array.indexOf(value) === index);
+    for (const key of cacheKeys) {
+      if (imageCache.has(key)) {
+        return imageCache.get(key);
+      }
+    }
+
+    const remember = (value) => {
+      cacheKeys.forEach((key) => {
+        imageCache.set(key, value);
+      });
+      return value;
+    };
+
+    const fallbackToCanvas = () => {
+      if (!img || !doc || typeof doc.createElement !== 'function') {
+        return null;
+      }
+      const width = Number(img.naturalWidth || img.width || 0);
+      const height = Number(img.naturalHeight || img.height || 0);
+      if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+        return null;
+      }
+      try {
+        const canvas = doc.createElement('canvas');
+        if (!canvas) {
+          return null;
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = typeof canvas.getContext === 'function' ? canvas.getContext('2d', { willReadFrequently: true }) : null;
+        if (!ctx || typeof ctx.drawImage !== 'function') {
+          return null;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        if (typeof canvas.toDataURL !== 'function') {
+          return null;
+        }
+        const data = canvas.toDataURL(guessMimeFromUrl(absolute));
+        if (data && typeof data === 'string' && data.startsWith('data:')) {
+          return remember(data);
+        }
+      } catch (error) {
+        // ignore canvas failures and fall back to non-inlined src
+      }
+      return null;
+    };
+
     if (typeof fetch !== 'function') {
-      imageCache.set(src, absolute);
-      return absolute;
+      const fallback = fallbackToCanvas();
+      if (fallback) {
+        return fallback;
+      }
+      return remember(absolute);
     }
+
     try {
       const response = await fetch(absolute, { cache: 'force-cache' });
       if (!response || !response.ok) {
-        imageCache.set(src, absolute);
-        return absolute;
+        const fallback = fallbackToCanvas();
+        if (fallback) {
+          return fallback;
+        }
+        return remember(absolute);
       }
       const mime = (response.headers && response.headers.get('content-type')) || 'application/octet-stream';
       if (typeof FileReader === 'function') {
@@ -549,21 +619,25 @@ async function buildEmailHTML() {
           reader.onerror = () => reject(new Error('read-failed'));
           reader.readAsDataURL(blob);
         });
-        imageCache.set(src, data);
-        return data;
+        return remember(data);
       }
       if (typeof Buffer !== 'undefined') {
         const arrayBuffer = await response.arrayBuffer();
         const base64 = Buffer.from(arrayBuffer).toString('base64');
         const data = `data:${mime};base64,${base64}`;
-        imageCache.set(src, data);
-        return data;
+        return remember(data);
       }
-      imageCache.set(src, absolute);
-      return absolute;
+      const fallback = fallbackToCanvas();
+      if (fallback) {
+        return fallback;
+      }
+      return remember(absolute);
     } catch (error) {
-      imageCache.set(src, absolute);
-      return absolute;
+      const fallback = fallbackToCanvas();
+      if (fallback) {
+        return fallback;
+      }
+      return remember(absolute);
     }
   };
 
@@ -575,7 +649,7 @@ async function buildEmailHTML() {
     if (!src) {
       return null;
     }
-    const dataUri = await toDataUri(src);
+    const dataUri = await toDataUri(img, src);
     const width = options.width || measureWidth(img, options.fallbackWidth || 0) || (img.naturalWidth ? Math.min(img.naturalWidth, 320) : 0);
     const alt = img.alt ? img.alt.trim() : '';
     return { src: dataUri, width, alt };
