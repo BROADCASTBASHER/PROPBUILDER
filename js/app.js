@@ -1378,6 +1378,19 @@ function initializeApp() {
     return chain;
   };
 
+  const shouldUseAnonymousCrossOrigin = (src) => {
+    if (!src || typeof src !== 'string') {
+      return false;
+    }
+    if (typeof window === 'undefined' || typeof location === 'undefined') {
+      return false;
+    }
+    if (location.protocol === 'file:') {
+      return false;
+    }
+    return needsSafeImagePrefetch(src);
+  };
+
   const ensureSafeImageSource = (src) => {
     if (!src || typeof src !== 'string') {
       return src;
@@ -1560,7 +1573,6 @@ function initializeApp() {
     if (hasRenderableLogo) {
       const logoImage = new Image();
       logoImage.decoding = 'async';
-      logoImage.crossOrigin = 'anonymous';
       logoImage.onload = () => {
         if (!logoImage.naturalWidth || !logoImage.naturalHeight) {
           scheduleBannerSync();
@@ -1595,6 +1607,11 @@ function initializeApp() {
         const finalSrc = (typeof source === 'string' && source) ? source : logoSrc;
         if (logoImage.src === finalSrc) {
           return;
+        }
+        if (shouldUseAnonymousCrossOrigin(finalSrc)) {
+          logoImage.crossOrigin = 'anonymous';
+        } else {
+          logoImage.crossOrigin = null;
         }
         try {
           logoImage.src = finalSrc;
