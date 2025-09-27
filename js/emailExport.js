@@ -1,11 +1,9 @@
-const DEFAULT_EMAIL_WIDTH = 680;
+const EMAIL_MAX_WIDTH = 680;
+const DEFAULT_EMAIL_WIDTH = EMAIL_MAX_WIDTH;
 const DEFAULT_IMAGE_WIDTH = 320;
 const DEFAULT_IMAGE_HEIGHT = 180;
 const FALLBACK_FONT_FAMILY = '-apple-system, Segoe UI, Roboto, Arial, sans-serif';
 
-const DATA_URI_REGEX = /^data:/i;
-const BLOB_URI_REGEX = /^blob:/i;
-const CSS_URL_REGEX = /url\(([^)]+)\)/gi;
 const SCRIPT_TAG_REGEX = /<script[\s\S]*?>[\s\S]*?<\/script>/gi;
 const STYLE_TAG_REGEX = /<style[\s\S]*?>[\s\S]*?<\/style>/gi;
 const EVENT_HANDLER_ATTR_REGEX = /\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi;
@@ -21,11 +19,171 @@ function esc(value) {
     .replace(/'/g, '&#39;');
 }
 
-function clampWidth(width, max = DEFAULT_EMAIL_WIDTH) {
+function clampWidth(width) {
   if (!Number.isFinite(width) || width <= 0) {
-    return Math.min(DEFAULT_IMAGE_WIDTH, max);
+    return Math.min(DEFAULT_IMAGE_WIDTH, EMAIL_MAX_WIDTH);
   }
-  return Math.min(Math.max(16, Math.round(width)), max);
+  return Math.min(Math.max(24, Math.round(width)), EMAIL_MAX_WIDTH);
+}
+
+function mimeFromExtOrBlob(url, blob) {
+  if (blob?.type && (blob.type === 'image/png' || blob.type === 'image/jpeg')) {
+    return blob.type;
+  }
+  const lower = url.split('?')[0].toLowerCase();
+  if (lower.endsWith('.png')) {
+    return 'image/png';
+  }
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
+    return 'image/jpeg';
+  }
+  return 'image/png';
+}
+
+function toDataURLViaFileReader(blob, mimeHint) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('readAsDataURL failed'));
+    reader.onload = () => {
+      let out = String(reader.result || '');
+      if (out.startsWith('data:application/octet-stream')) {
+        out = out.replace('data:application/octet-stream', `data:${mimeHint}`);
+      }
+      resolve(out);
+    };
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function fetchAsDataURL(url) {
+  const resp = await fetch(url, { credentials: 'include' }).catch(() => null);
+  if (!resp || !resp.ok) {
+    throw new Error(`Fetch failed: ${url}`);
+  }
+  const blob = await resp.blob();
+  const mime = mimeFromExtOrBlob(url, blob);
+  const dataUri = await toDataURLViaFileReader(blob, mime);
+  return { dataUri, mime };
+}
+
+async function imgElementToDataURI(img, warnings) {
+  try {
+    const src = img.currentSrc || img.src;
+    if (!src) {
+      return null;
+    }
+
+    if (src.startsWith('data:image/png') || src.startsWith('data:image/jpeg')) {
+      return { dataUri: src, mime: src.includes('image/png') ? 'image/png' : 'image/jpeg' };
+    }
+
+    if (src.startsWith('blob:') || src.startsWith('http')) {
+      try {
+        return await fetchAsDataURL(src);
+      } catch (error) {
+        const tmp = new Image();
+        tmp.crossOrigin = 'anonymous';
+        tmp.decoding = 'sync';
+        tmp.referrerPolicy = 'no-referrer';
+        tmp.src = src;
+        await tmp.decode().catch(() => {
+          throw new Error('decode failed');
+        });
+
+        const w = tmp.naturalWidth || 1;
+        const h = tmp.naturalHeight || 1;
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (!ctx) {
+          throw new Error('canvas ctx null');
+        }
+        ctx.drawImage(tmp, 0, 0);
+        const dataUri = canvas.toDataURL(mimeFromExtOrBlob(src));
+        return { dataUri, mime: mimeFromExtOrBlob(src) };
+      }
+    }
+
+    return await fetchAsDataURL(src);
+  } catch (error) {
+    warnings.push(`IMG inline failed: ${img.alt || '[no alt]'} — ${error?.message || error}`);
+    return null;
+  }
+}
+
+async function canvasToDataImg(canvas, warnings) {
+  try {
+    const dataUri = canvas.toDataURL('image/png', 1.0);
+    return { dataUri, mime: 'image/png' };
+  } catch (error) {
+    warnings.push(`Canvas inline failed: ${error?.message || error}`);
+    return null;
+  }
+}
+
+async function inlineBackgroundImage(el, warnings) {
+  const computed = getComputedStyle(el);
+  const bg = computed.backgroundImage;
+  if (!bg || bg === 'none') {
+    return;
+  }
+
+  const matches = [...bg.matchAll(/url\((['"]?)(.*?)\1\)/g)].map((match) => match[2]).filter(Boolean);
+  if (!matches.length) {
+    return;
+  }
+
+  let nextBg = bg;
+  for (const url of matches) {
+    try {
+      const { dataUri } = await fetchAsDataURL(url);
+      nextBg = nextBg.replace(url, dataUri);
+    } catch (error) {
+      warnings.push(`BG image inline failed: ${url} — ${error?.message || error}`);
+    }
+  }
+  el.style.backgroundImage = nextBg;
+}
+
+function setExplicitDimensions(el) {
+  const rect = el.getBoundingClientRect();
+  const width = clampWidth(rect.width || Number(el.width) || EMAIL_MAX_WIDTH);
+  el.width = width;
+  el.style.width = `${width}px`;
+  el.style.height = 'auto';
+  el.style.display = 'block';
+}
+
+async function inlineAllRasterImages(root, warnings) {
+  const canvases = Array.from(root.querySelectorAll('canvas'));
+  for (const canvas of canvases) {
+    const res = await canvasToDataImg(canvas, warnings);
+    const img = document.createElement('img');
+    if (res) {
+      img.src = res.dataUri;
+    } else {
+      img.alt = 'Canvas unavailable';
+    }
+    setExplicitDimensions(img);
+    canvas.replaceWith(img);
+  }
+
+  const images = Array.from(root.querySelectorAll('img'));
+  for (const image of images) {
+    const res = await imgElementToDataURI(image, warnings);
+    if (res) {
+      image.src = res.dataUri;
+      setExplicitDimensions(image);
+    } else {
+      setExplicitDimensions(image);
+    }
+  }
+
+  const elements = Array.from(root.querySelectorAll('*'));
+  for (const element of elements) {
+    await inlineBackgroundImage(element, warnings);
+  }
 }
 
 function sanitizeHTML(input) {
@@ -48,130 +206,6 @@ function textToHTML(text) {
   return esc(text).replace(/\r\n|\n|\r/g, '<br>');
 }
 
-async function blobToDataUri(blob, mimeType) {
-  if (!blob) {
-    throw new Error('No blob provided');
-  }
-  if (typeof FileReader === 'function') {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result);
-      reader.onerror = (error) => reject(error);
-      reader.readAsDataURL(blob);
-    });
-  }
-  if (blob.arrayBuffer) {
-    const buffer = await blob.arrayBuffer();
-    const base64 = Buffer.from(buffer).toString('base64');
-    const mime = mimeType || (blob.type || 'application/octet-stream');
-    return `data:${mime};base64,${base64}`;
-  }
-  throw new Error('Unsupported blob type');
-}
-
-async function fetchAsDataUri(src) {
-  if (!src) {
-    throw new Error('Missing source');
-  }
-  if (DATA_URI_REGEX.test(src)) {
-    return src;
-  }
-  if (BLOB_URI_REGEX.test(src) && typeof fetch !== 'function') {
-    throw new Error('Unable to inline blob: URIs without fetch support');
-  }
-  if (typeof fetch !== 'function') {
-    throw new Error('fetch is not available in this environment');
-  }
-  const response = await fetch(src);
-  if (!response.ok) {
-    throw new Error(`Failed to load resource: ${response.status} ${response.statusText}`);
-  }
-  const blob = await response.blob();
-  const contentType = response.headers.get('content-type') || undefined;
-  return blobToDataUri(blob, contentType);
-}
-
-async function resolveCssBackground(styleString, warnings) {
-  if (!styleString) {
-    return { css: '', warnings };
-  }
-  const replacements = [];
-  let match;
-  CSS_URL_REGEX.lastIndex = 0;
-  while ((match = CSS_URL_REGEX.exec(styleString)) !== null) {
-    const raw = match[1].trim();
-    const cleaned = raw.replace(/^['"]|['"]$/g, '');
-    if (!cleaned) {
-      continue;
-    }
-    try {
-      const dataUri = await fetchAsDataUri(cleaned);
-      replacements.push({ original: match[0], dataUri });
-    } catch (error) {
-      warnings.push(`Unable to inline background image ${cleaned}: ${error.message}`);
-    }
-  }
-  let rewritten = styleString;
-  for (const replacement of replacements) {
-    rewritten = rewritten.replace(replacement.original, `url('${replacement.dataUri}')`);
-  }
-  return { css: rewritten, warnings };
-}
-
-async function resolveToDataURI(image, warnings) {
-  if (!image || !image.src) {
-    return null;
-  }
-  const kind = image.kind || 'img';
-  const source = image.src;
-  try {
-    if (kind === 'css-bg') {
-      const { css } = await resolveCssBackground(source, warnings);
-      return {
-        kind,
-        css,
-        width: image.width,
-        height: image.height,
-      };
-    }
-    if (kind === 'canvas') {
-      if (typeof document !== 'undefined') {
-        const canvas = document.getElementById(source) || (typeof source === 'string' ? document.querySelector(source) : null);
-        if (canvas && typeof canvas.toDataURL === 'function') {
-          const dataUri = canvas.toDataURL('image/png', 1.0);
-          return {
-            kind: 'img',
-            dataUri,
-            width: image.width ?? canvas.width,
-            height: image.height ?? canvas.height,
-          };
-        }
-      }
-      throw new Error('Canvas element is not available in this environment');
-    }
-    if (kind === 'img' || kind === 'url') {
-      const dataUri = await fetchAsDataUri(source);
-      return {
-        kind: 'img',
-        dataUri,
-        width: image.width,
-        height: image.height,
-      };
-    }
-    // fallback attempt
-    const dataUri = await fetchAsDataUri(source);
-    return {
-      kind: 'img',
-      dataUri,
-      width: image.width,
-      height: image.height,
-    };
-  } catch (error) {
-    warnings.push(`Unable to resolve image '${source}': ${error.message}`);
-    return null;
-  }
-}
-
 function spacerRow(height = 16) {
   const safeHeight = Math.max(0, Math.round(height));
   return `<tr><td style="height:${safeHeight}px; line-height:${safeHeight}px; font-size:0;">&nbsp;</td></tr>`;
@@ -188,17 +222,31 @@ async function renderFeatureCard(feature, brand, warnings) {
   const bodyColor = brand?.colorText || '#333333';
   const titleColor = brand?.colorHeading || '#222222';
   const rows = [];
-  const resolved = feature.image ? await resolveToDataURI(feature.image, warnings) : null;
-  if (resolved) {
-    if (resolved.kind === 'css-bg' && resolved.css) {
-      const width = clampWidth(resolved.width ?? feature.image?.width ?? DEFAULT_IMAGE_WIDTH);
-      const height = Math.max(32, Math.round(resolved.height ?? feature.image?.height ?? DEFAULT_IMAGE_HEIGHT));
-      const cssSnippet = resolved.css.trim();
-      const backgroundCss = cssSnippet ? (cssSnippet.endsWith(';') ? cssSnippet : `${cssSnippet};`) : '';
-      rows.push(`<tr><td style="padding-bottom:12px;"><div style="width:${width}px; height:${height}px; background-repeat:no-repeat; background-size:cover; background-position:center; border-radius:12px; ${backgroundCss}"></div></td></tr>`);
-    } else if (resolved.dataUri) {
-      const width = clampWidth(resolved.width ?? feature.image?.width ?? DEFAULT_IMAGE_WIDTH);
-      rows.push(`<tr><td style="padding-bottom:12px;"><img src="${resolved.dataUri}" alt="${esc(feature.title || 'Feature image')}" width="${width}" style="display:block; width:${width}px; max-width:100%; height:auto; border:0; outline:none; text-decoration:none;"></td></tr>`);
+  const image = feature?.image;
+  if (image) {
+    if ((image.kind === 'css-bg' || image.background === true) && (image.css || image.src)) {
+      const width = clampWidth(image.width ?? DEFAULT_IMAGE_WIDTH);
+      const height = Math.max(32, Math.round(image.height ?? DEFAULT_IMAGE_HEIGHT));
+      const styleParts = [
+        `width:${width}px`,
+        `height:${height}px`,
+        'background-repeat:no-repeat',
+        'background-size:cover',
+        'background-position:center',
+        'border-radius:12px'
+      ];
+      if (image.src) {
+        styleParts.push(`background-image:url('${esc(image.src)}')`);
+      }
+      if (image.css) {
+        styleParts.push(image.css.trim().replace(/;+$/g, ''));
+      }
+      const styleAttr = `${styleParts.join('; ')};`;
+      rows.push(`<tr><td style="padding-bottom:12px;"><div style="${styleAttr}"></div></td></tr>`);
+    } else if (image.src) {
+      const width = clampWidth(image.width ?? DEFAULT_IMAGE_WIDTH);
+      const altText = image.alt || feature.title || 'Feature image';
+      rows.push(`<tr><td style="padding-bottom:12px;"><img src="${esc(image.src)}" alt="${esc(altText)}" width="${width}" style="display:block; width:${width}px; max-width:100%; height:auto; border:0; outline:none; text-decoration:none;"></td></tr>`);
     }
   }
   if (feature.title) {
@@ -300,18 +348,42 @@ async function buildFeatureSection(features, heading, brand, warnings) {
   return [headingHtml, spacerRow(12), wrapInSection(cardsTable)].join('\n');
 }
 
-async function renderBanner(banner, brand, warnings) {
+async function renderBanner(banner) {
   if (!banner) {
     return '';
   }
-  const resolved = await resolveToDataURI(banner, warnings);
-  if (!resolved || !resolved.dataUri) {
-    return '';
-  }
-  const width = DEFAULT_EMAIL_WIDTH;
-  return `<tr><td style="padding:0;">
-    <img src="${resolved.dataUri}" alt="Proposal banner" width="${width}" style="display:block; width:${width}px; max-width:100%; height:auto; border:0; outline:none; text-decoration:none;">
+  if (typeof banner === 'string') {
+    const width = DEFAULT_EMAIL_WIDTH;
+    return `<tr><td style="padding:0;">
+    <img src="${esc(banner)}" alt="Proposal banner" width="${width}" style="display:block; width:${width}px; max-width:100%; height:auto; border:0; outline:none; text-decoration:none;">
   </td></tr>`;
+  }
+  if (typeof banner === 'object') {
+    if (typeof HTMLCanvasElement !== 'undefined' && banner instanceof HTMLCanvasElement) {
+      const clone = banner.cloneNode(true);
+      clone.removeAttribute('id');
+      clone.style.display = 'block';
+      clone.style.width = `${DEFAULT_EMAIL_WIDTH}px`;
+      clone.style.height = 'auto';
+      return `<tr><td style="padding:0;">${clone.outerHTML}</td></tr>`;
+    }
+    if (typeof HTMLImageElement !== 'undefined' && banner instanceof HTMLImageElement) {
+      const clone = banner.cloneNode(true);
+      clone.width = DEFAULT_EMAIL_WIDTH;
+      clone.style.width = `${DEFAULT_EMAIL_WIDTH}px`;
+      clone.style.height = 'auto';
+      clone.style.display = 'block';
+      return `<tr><td style="padding:0;">${clone.outerHTML}</td></tr>`;
+    }
+    if (banner.src) {
+      const width = DEFAULT_EMAIL_WIDTH;
+      const altText = banner.alt || 'Proposal banner';
+      return `<tr><td style="padding:0;">
+    <img src="${esc(banner.src)}" alt="${esc(altText)}" width="${width}" style="display:block; width:${width}px; max-width:100%; height:auto; border:0; outline:none; text-decoration:none;">
+  </td></tr>`;
+    }
+  }
+  return '';
 }
 
 function buildHeaderSection(proposal, brand) {
@@ -400,16 +472,8 @@ function buildHeroSpacer(brand) {
   </td></tr>`;
 }
 
-function buildOuterWrapper(content, brand) {
-  const fontFamily = brand.fontFamily || FALLBACK_FONT_FAMILY;
-  return `<!DOCTYPE html>
-<html>
-  <head>
-    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  </head>
-  <body style="margin:0; padding:0; background-color:#FFFFFF; font-family:${esc(fontFamily)};">
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%; background-color:#FFFFFF;">
+function buildOuterWrapper(content) {
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%; background-color:#FFFFFF;">
       <tr>
         <td align="center" style="padding:0;">
           <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="${DEFAULT_EMAIL_WIDTH}" style="width:${DEFAULT_EMAIL_WIDTH}px; max-width:100%;">
@@ -417,9 +481,7 @@ function buildOuterWrapper(content, brand) {
           </table>
         </td>
       </tr>
-    </table>
-  </body>
-</html>`;
+    </table>`;
 }
 
 function splitFeatures(features) {
@@ -447,7 +509,7 @@ async function buildEmailExportHTML(proposal) {
   const brand = normalizeBrand(proposal.brand);
   const contentParts = [];
 
-  const bannerHtml = await renderBanner(proposal.banner, brand, warnings);
+  const bannerHtml = await renderBanner(proposal.banner);
   if (bannerHtml) {
     contentParts.push(bannerHtml);
   }
@@ -506,8 +568,32 @@ async function buildEmailExportHTML(proposal) {
   }
 
   const content = contentParts.filter(Boolean).join('\n');
-  const html = buildOuterWrapper(content, brand);
-  const sizeKB = Buffer.byteLength(html, 'utf8') / 1024;
+  const wrapperMarkup = buildOuterWrapper(content);
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = wrapperMarkup;
+
+  await inlineAllRasterImages(wrapper, warnings);
+
+  const fontFamily = brand.fontFamily || FALLBACK_FONT_FAMILY;
+  const emailBody = wrapper.innerHTML;
+  const html = [
+    '<!doctype html><html><head><meta charset="utf-8">',
+    '<meta http-equiv="x-ua-compatible" content="ie=edge">',
+    '<meta name="viewport" content="width=device-width, initial-scale=1">',
+    '</head>',
+    `<body style="margin:0; padding:0; background-color:#FFFFFF; font-family:${esc(fontFamily)};">`,
+    emailBody,
+    '</body></html>'
+  ].join('');
+
+  let sizeKB = 0;
+  if (typeof Blob === 'function') {
+    sizeKB = Math.round(new Blob([html]).size / 1024);
+  } else if (typeof Buffer !== 'undefined') {
+    sizeKB = Math.round(Buffer.byteLength(html, 'utf8') / 1024);
+  } else {
+    sizeKB = Math.round(html.length / 1024);
+  }
 
   return {
     html,
@@ -520,9 +606,9 @@ module.exports = {
   buildEmailExportHTML,
   // exporting helpers for potential testing
   __private: {
-    resolveToDataURI,
     sanitizeHTML,
     renderFeatureCard,
     renderKeyBenefits,
+    inlineAllRasterImages,
   },
 };
