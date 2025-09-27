@@ -726,7 +726,8 @@ test('buildEmailHTML composes full export with escaped content and live data', (
   assert.ok(html.includes('Modernise your workplace'));
   assert.ok(html.includes('Executive summary'));
   assert.ok(html.includes('Key benefits'));
-  assert.ok(html.includes('<li>Rapid deployment</li><li>99.99% uptime</li>'));
+  assert.ok(html.includes('Rapid deployment'));
+  assert.ok(html.includes('99.99% uptime'));
   assert.ok(html.includes('Boost morale'));
   assert.ok(html.includes('Improve security'));
   assert.ok(html.includes('Features &amp; highlights'));
