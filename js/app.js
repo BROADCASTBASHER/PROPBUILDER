@@ -263,6 +263,76 @@ if (typeof window !== 'undefined') {
 
 let bannerPanelImage = null;
 
+const readBlobAsDataUrl = (blob) => new Promise((resolve, reject) => {
+  if (typeof FileReader !== 'function') {
+    reject(new Error('FileReader is not supported'));
+    return;
+  }
+  const reader = new FileReader();
+  reader.onloadend = () => {
+    resolve(typeof reader.result === 'string' ? reader.result : '');
+  };
+  reader.onerror = () => {
+    reject(reader.error || new Error('Failed to read blob as data URL'));
+  };
+  reader.readAsDataURL(blob);
+});
+
+const defaultFetchImageAsDataUrl = (url) => {
+  const attempts = [];
+  if (typeof fetch === 'function') {
+    attempts.push(() => fetch(url, { mode: 'cors', credentials: 'omit' })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`Unexpected response status: ${response.status}`);
+        }
+        return response.blob();
+      })
+      .then((blob) => readBlobAsDataUrl(blob)));
+  }
+  if (typeof XMLHttpRequest === 'function') {
+    attempts.push(() => new Promise((resolve, reject) => {
+      try {
+        const xhr = new XMLHttpRequest();
+        xhr.open('GET', url, true);
+        xhr.responseType = 'blob';
+        xhr.onload = () => {
+          if (xhr.status === 0 || (xhr.status >= 200 && xhr.status < 300)) {
+            let responseBlob = null;
+            if (typeof Blob === 'function') {
+              responseBlob = xhr.response instanceof Blob ? xhr.response : new Blob([xhr.response]);
+            }
+            if (responseBlob) {
+              readBlobAsDataUrl(responseBlob).then(resolve).catch(reject);
+            } else {
+              reject(new Error('Blob API is not supported for image conversion'));
+            }
+          } else {
+            reject(new Error(`Unexpected XHR status: ${xhr.status}`));
+          }
+        };
+        xhr.onerror = () => {
+          reject(new Error('XHR network error while fetching image'));
+        };
+        xhr.send();
+      } catch (error) {
+        reject(error);
+      }
+    }));
+  }
+  if (!attempts.length) {
+    return Promise.reject(new Error('No supported fetch mechanisms available'));
+  }
+  let chain = attempts[0]();
+  for (let i = 1; i < attempts.length; i += 1) {
+    const nextAttempt = attempts[i];
+    chain = chain.catch(() => nextAttempt());
+  }
+  return chain;
+};
+
+let fetchImageAsDataUrlImpl = defaultFetchImageAsDataUrl;
+
 function bulletify(input) {
   const lines = String(input == null ? '' : input)
     .split(/\r?\n/)
@@ -528,10 +598,12 @@ async function buildEmailHTML() {
     return 'image/png';
   };
 
+  const fetchImageAsDataUrl = (url) => fetchImageAsDataUrlImpl(url);
+
   const toDataUri = async (img, source) => {
     const rawSrc = source || (img ? (img.currentSrc || img.src) : '');
     if (!rawSrc) {
-      return '';
+      return null;
     }
     if (String(rawSrc).startsWith('data:')) {
       return rawSrc;
@@ -559,9 +631,53 @@ async function buildEmailHTML() {
       return value;
     };
 
-    const fallbackToCanvas = () => {
+    const waitForDecode = async () => {
+      if (!img) {
+        return;
+      }
+      if (typeof img.decode === 'function') {
+        try {
+          await img.decode();
+          return;
+        } catch (error) {
+          // ignore decode errors and fall back to load events
+        }
+      }
+      const complete = typeof img.complete === 'boolean' ? img.complete : true;
+      if (complete) {
+        return;
+      }
+      if (typeof img.addEventListener !== 'function') {
+        return;
+      }
+      await new Promise((resolve, reject) => {
+        const cleanup = () => {
+          if (typeof img.removeEventListener === 'function') {
+            img.removeEventListener('load', onLoad);
+            img.removeEventListener('error', onError);
+          }
+        };
+        const onLoad = () => {
+          cleanup();
+          resolve();
+        };
+        const onError = () => {
+          cleanup();
+          reject(new Error('decode-failed'));
+        };
+        img.addEventListener('load', onLoad, { once: true });
+        img.addEventListener('error', onError, { once: true });
+      }).catch(() => {});
+    };
+
+    const fallbackToCanvas = async () => {
       if (!img || !doc || typeof doc.createElement !== 'function') {
         return null;
+      }
+      try {
+        await waitForDecode();
+      } catch (error) {
+        // ignore decode errors
       }
       const width = Number(img.naturalWidth || img.width || 0);
       const height = Number(img.naturalHeight || img.height || 0);
@@ -588,57 +704,74 @@ async function buildEmailHTML() {
           return remember(data);
         }
       } catch (error) {
-        // ignore canvas failures and fall back to non-inlined src
+        // ignore canvas failures
       }
       return null;
     };
 
-    if (typeof fetch !== 'function') {
-      const fallback = fallbackToCanvas();
-      if (fallback) {
-        return fallback;
+    const tryDirectFetch = async () => {
+      if (typeof fetch !== 'function') {
+        return null;
       }
-      return remember(absolute);
+      try {
+        const response = await fetch(absolute, { cache: 'force-cache' });
+        if (!response || !response.ok) {
+          return null;
+        }
+        const mime = (response.headers && response.headers.get && response.headers.get('content-type')) || 'application/octet-stream';
+        if (typeof FileReader === 'function') {
+          const blob = await response.blob();
+          const data = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+            reader.onerror = () => reject(new Error('read-failed'));
+            reader.readAsDataURL(blob);
+          });
+          if (data && data.startsWith('data:')) {
+            return data;
+          }
+          return null;
+        }
+        if (typeof Buffer !== 'undefined') {
+          const arrayBuffer = await response.arrayBuffer();
+          const base64 = Buffer.from(arrayBuffer).toString('base64');
+          const data = `data:${mime};base64,${base64}`;
+          if (data && data.startsWith('data:')) {
+            return data;
+          }
+        }
+      } catch (error) {
+        return null;
+      }
+      return null;
+    };
+
+    const tryHelperFetch = async () => {
+      try {
+        const result = await fetchImageAsDataUrl(absolute);
+        if (result && typeof result === 'string' && result.startsWith('data:')) {
+          return result;
+        }
+      } catch (error) {
+        // ignore helper errors
+      }
+      return null;
+    };
+
+    let dataUri = await tryDirectFetch();
+    if (!dataUri) {
+      dataUri = await tryHelperFetch();
+    }
+    if (dataUri) {
+      return remember(dataUri);
     }
 
-    try {
-      const response = await fetch(absolute, { cache: 'force-cache' });
-      if (!response || !response.ok) {
-        const fallback = fallbackToCanvas();
-        if (fallback) {
-          return fallback;
-        }
-        return remember(absolute);
-      }
-      const mime = (response.headers && response.headers.get('content-type')) || 'application/octet-stream';
-      if (typeof FileReader === 'function') {
-        const blob = await response.blob();
-        const data = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result || '');
-          reader.onerror = () => reject(new Error('read-failed'));
-          reader.readAsDataURL(blob);
-        });
-        return remember(data);
-      }
-      if (typeof Buffer !== 'undefined') {
-        const arrayBuffer = await response.arrayBuffer();
-        const base64 = Buffer.from(arrayBuffer).toString('base64');
-        const data = `data:${mime};base64,${base64}`;
-        return remember(data);
-      }
-      const fallback = fallbackToCanvas();
-      if (fallback) {
-        return fallback;
-      }
-      return remember(absolute);
-    } catch (error) {
-      const fallback = fallbackToCanvas();
-      if (fallback) {
-        return fallback;
-      }
-      return remember(absolute);
+    const canvasResult = await fallbackToCanvas();
+    if (canvasResult) {
+      return canvasResult;
     }
+
+    return remember(null);
   };
 
   const imageFromElement = async (img, options = {}) => {
@@ -650,6 +783,12 @@ async function buildEmailHTML() {
       return null;
     }
     const dataUri = await toDataUri(img, src);
+    if (!dataUri) {
+      if (typeof console !== 'undefined' && console && typeof console.warn === 'function') {
+        console.warn('Unable to inline image for export; omitting from output', src);
+      }
+      return null;
+    }
     const width = options.width || measureWidth(img, options.fallbackWidth || 0) || (img.naturalWidth ? Math.min(img.naturalWidth, 320) : 0);
     const alt = img.alt ? img.alt.trim() : '';
     return { src: dataUri, width, alt };
@@ -1382,74 +1521,6 @@ function initializeApp() {
     } catch (error) {
       return false;
     }
-  };
-
-  const readBlobAsDataUrl = (blob) => new Promise((resolve, reject) => {
-    if (typeof FileReader !== 'function') {
-      reject(new Error('FileReader is not supported'));
-      return;
-    }
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      resolve(typeof reader.result === 'string' ? reader.result : '');
-    };
-    reader.onerror = () => {
-      reject(reader.error || new Error('Failed to read blob as data URL'));
-    };
-    reader.readAsDataURL(blob);
-  });
-
-  const fetchImageAsDataUrl = (url) => {
-    const attempts = [];
-    if (typeof fetch === 'function') {
-      attempts.push(() => fetch(url, { mode: 'cors', credentials: 'omit' })
-        .then((response) => {
-          if (!response.ok) {
-            throw new Error(`Unexpected response status: ${response.status}`);
-          }
-          return response.blob();
-        })
-        .then((blob) => readBlobAsDataUrl(blob)));
-    }
-    if (typeof XMLHttpRequest === 'function') {
-      attempts.push(() => new Promise((resolve, reject) => {
-        try {
-          const xhr = new XMLHttpRequest();
-          xhr.open('GET', url, true);
-          xhr.responseType = 'blob';
-          xhr.onload = () => {
-            if (xhr.status === 0 || (xhr.status >= 200 && xhr.status < 300)) {
-              let responseBlob = null;
-              if (typeof Blob === 'function') {
-                responseBlob = xhr.response instanceof Blob ? xhr.response : new Blob([xhr.response]);
-              }
-              if (responseBlob) {
-                readBlobAsDataUrl(responseBlob).then(resolve).catch(reject);
-              } else {
-                reject(new Error('Blob API is not supported for image conversion'));
-              }
-            } else {
-              reject(new Error(`Unexpected XHR status: ${xhr.status}`));
-            }
-          };
-          xhr.onerror = () => {
-            reject(new Error('XHR network error while fetching image'));
-          };
-          xhr.send();
-        } catch (error) {
-          reject(error);
-        }
-      }));
-    }
-    if (!attempts.length) {
-      return Promise.reject(new Error('No supported fetch mechanisms available'));
-    }
-    let chain = attempts[0]();
-    for (let i = 1; i < attempts.length; i += 1) {
-      const nextAttempt = attempts[i];
-      chain = chain.catch(() => nextAttempt());
-    }
-    return chain;
   };
 
   const shouldUseAnonymousCrossOrigin = (src) => {
@@ -2602,6 +2673,12 @@ if (typeof module !== 'undefined' && module.exports) {
     PRESETS,
     FEATURE_LIBRARY,
     DEFAULT_PRICING_ITEMS,
+    __setFetchImageAsDataUrl__(fn) {
+      fetchImageAsDataUrlImpl = typeof fn === 'function' ? fn : defaultFetchImageAsDataUrl;
+    },
+    __resetFetchImageAsDataUrl__() {
+      fetchImageAsDataUrlImpl = defaultFetchImageAsDataUrl;
+    },
   };
 }
 

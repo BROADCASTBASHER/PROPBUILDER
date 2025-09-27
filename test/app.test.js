@@ -13,6 +13,8 @@ const {
   PRESETS,
   FEATURE_LIBRARY,
   DEFAULT_PRICING_ITEMS,
+  __setFetchImageAsDataUrl__: setFetchImageAsDataUrl,
+  __resetFetchImageAsDataUrl__: resetFetchImageAsDataUrl,
 } = require('../js/app.js');
 
 const clone = (value) => {
@@ -779,6 +781,122 @@ test('buildEmailHTML falls back to canvas data URIs when fetch fails', async () 
   } finally {
     global.fetch = previousFetch;
     global.__testCanvasToDataURL = previousCanvasToDataURL;
+  }
+});
+
+test('buildEmailHTML uses fetchImageAsDataUrl helper when standard fetches fail', async () => {
+  const previousFetch = global.fetch;
+  const previousXHR = global.XMLHttpRequest;
+  const previousCanvasToDataURL = global.__testCanvasToDataURL;
+  const helperDataUri = 'data:image/png;base64,helper-success';
+  let fetchAttempts = 0;
+  global.fetch = () => {
+    fetchAttempts += 1;
+    return Promise.reject(new Error('network down'));
+  };
+  global.XMLHttpRequest = function BrokenXHR() {
+    throw new Error('xhr disabled');
+  };
+  global.__testCanvasToDataURL = () => {
+    throw new Error('canvas failure');
+  };
+  setFetchImageAsDataUrl(() => helperDataUri);
+
+  const featureCards = [createFeatureCardStub({
+    title: 'Helper icon',
+    copy: ['Helper fallback'],
+    image: 'file:///Users/test/icon.png'
+  })];
+
+  try {
+    const html = await withDocumentEnvironment({
+      ids: {
+        pvCustomer: createElement({ textContent: 'Helper Co' }),
+        pvRef: createElement({ textContent: '' }),
+        pvHero: createElement({ textContent: 'Helper hero' }),
+        pvSub: createElement({ textContent: '' }),
+        pvSummary: createElement({ textContent: 'Summary.' }),
+        pvBenefits: createElement({ textContent: '' }),
+        pvMonthly: createElement({ textContent: '' }),
+        pvTerm2: createElement({ textContent: '' }),
+        priceTableView: createElement({
+          querySelectorAll() {
+            return [];
+          }
+        }),
+        assumptions: createElement({ textContent: '' })
+      },
+      queryAll: {
+        '[data-export="features-standard"] [data-export-feature="card"][data-export-feature-type="standard"]': featureCards,
+        '[data-export="features-hero"] [data-export-feature="card"]': []
+      },
+      state: { features: [] }
+    }, () => buildEmailHTML());
+
+    assert.ok(fetchAttempts > 0, 'fetch should be attempted before helper fallback');
+    const match = html.match(/<img src="(data:image[^"]+)" alt="Helper icon"/);
+    assert.ok(match, 'feature icon should render via helper data URI');
+    assert.strictEqual(match[1], helperDataUri);
+    assert.ok(!html.includes('file:///Users/test/icon.png'), 'raw file path should not leak into export');
+  } finally {
+    global.fetch = previousFetch;
+    global.XMLHttpRequest = previousXHR;
+    global.__testCanvasToDataURL = previousCanvasToDataURL;
+    resetFetchImageAsDataUrl();
+  }
+});
+
+test('buildEmailHTML omits feature images when all inlining strategies fail', async () => {
+  const previousFetch = global.fetch;
+  const previousXHR = global.XMLHttpRequest;
+  const previousCanvasToDataURL = global.__testCanvasToDataURL;
+  global.fetch = () => Promise.reject(new Error('network down'));
+  global.XMLHttpRequest = function BrokenXHR() {
+    throw new Error('xhr disabled');
+  };
+  global.__testCanvasToDataURL = () => {
+    throw new Error('canvas failure');
+  };
+  setFetchImageAsDataUrl(async () => { throw new Error('helper failure'); });
+
+  const featureCards = [createFeatureCardStub({
+    title: 'Missing icon',
+    copy: ['Missing fallback'],
+    image: 'file:///Users/test/missing.png'
+  })];
+
+  try {
+    const html = await withDocumentEnvironment({
+      ids: {
+        pvCustomer: createElement({ textContent: 'Missing Co' }),
+        pvRef: createElement({ textContent: '' }),
+        pvHero: createElement({ textContent: 'Missing hero' }),
+        pvSub: createElement({ textContent: '' }),
+        pvSummary: createElement({ textContent: 'Summary.' }),
+        pvBenefits: createElement({ textContent: '' }),
+        pvMonthly: createElement({ textContent: '' }),
+        pvTerm2: createElement({ textContent: '' }),
+        priceTableView: createElement({
+          querySelectorAll() {
+            return [];
+          }
+        }),
+        assumptions: createElement({ textContent: '' })
+      },
+      queryAll: {
+        '[data-export="features-standard"] [data-export-feature="card"][data-export-feature-type="standard"]': featureCards,
+        '[data-export="features-hero"] [data-export-feature="card"]': []
+      },
+      state: { features: [] }
+    }, () => buildEmailHTML());
+
+    assert.ok(!/<img src="[^"]+" alt="Missing icon"/.test(html), 'feature image should be omitted when data URI is unavailable');
+    assert.ok(!html.includes('file:///Users/test/missing.png'), 'missing file path should not appear in export');
+  } finally {
+    global.fetch = previousFetch;
+    global.XMLHttpRequest = previousXHR;
+    global.__testCanvasToDataURL = previousCanvasToDataURL;
+    resetFetchImageAsDataUrl();
   }
 });
 
