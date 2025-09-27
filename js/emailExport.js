@@ -658,16 +658,18 @@ async function buildEmailExportHTML(proposal) {
   };
 }
 
-module.exports = {
-  buildEmailExportHTML,
-  // exporting helpers for potential testing
-  __private: {
-    sanitizeHTML,
-    renderFeatureCard,
-    renderKeyBenefits,
-    inlineAllRasterImages,
-  },
-};
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    buildEmailExportHTML,
+    // exporting helpers for potential testing
+    __private: {
+      sanitizeHTML,
+      renderFeatureCard,
+      renderKeyBenefits,
+      inlineAllRasterImages,
+    },
+  };
+}
 
 if (typeof window !== 'undefined') {
   window.PropBuilderEmailExport = window.PropBuilderEmailExport || {};
