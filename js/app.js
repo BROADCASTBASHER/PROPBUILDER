@@ -582,44 +582,6 @@ function buildEmailHTML() {
     return `#${clamp(match[1])}${clamp(match[2])}${clamp(match[3])}`;
   };
 
-  const panelColor = (() => {
-    try {
-      const el = document.querySelector('#tab-preview .price-card, #tab-preview .preview-box, #pvPriceCard, .price-card');
-      if (el) {
-        const computed = typeof getComputedStyle === 'function' ? getComputedStyle(el).backgroundColor : null;
-        if (computed) {
-          return toHex(computed);
-        }
-      }
-    } catch (error) {
-      // ignore
-    }
-    try {
-      if (typeof PRESETS !== 'undefined' && typeof state !== 'undefined') {
-        const preset = PRESETS && state && PRESETS[state.preset];
-        if (preset && preset.panel) {
-          return preset.panel;
-        }
-      }
-    } catch (error) {
-      // ignore
-    }
-    return '#E5E6EA';
-  })();
-
-  const resolvePillTextColor = (background) => {
-    const match = String(background == null ? '' : background).trim().match(/^#?([0-9a-f]{6})$/i);
-    if (!match) {
-      return '#0B1220';
-    }
-    const hex = match[1];
-    const r = Number.parseInt(hex.slice(0, 2), 16);
-    const g = Number.parseInt(hex.slice(2, 4), 16);
-    const b = Number.parseInt(hex.slice(4, 6), 16);
-    const brightness = (r * 299 + g * 587 + b * 114) / 1000;
-    return brightness < 140 ? '#FFFFFF' : '#0B1220';
-  };
-
   const getText = (id) => {
     const el = document.getElementById(id);
     if (!el || typeof el.textContent !== 'string') {
@@ -678,7 +640,6 @@ function buildEmailHTML() {
   const priceRows = readPriceRows();
   const featuresHeader = readFeaturesHeader();
   const hasHeroFeature = heroFeatures.length > 0;
-  const pillTextColor = resolvePillTextColor(panelColor);
 
   const renderFeatureCopy = (text) => {
     if (!text) {
@@ -803,27 +764,30 @@ function buildEmailHTML() {
   out.push('<table role="presentation" width="720" cellpadding="0" cellspacing="0" style="width:100%;max-width:720px;border-collapse:separate;">');
   out.push('<tr><td style="padding:0;">');
   out.push('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;background:#FFFFFF;border-radius:28px;overflow:hidden;box-shadow:0 18px 60px rgba(11,18,32,0.16);">');
-  out.push('<tr><td style="background:#0B1220;color:#FFFFFF;padding:16px 28px;font-size:12px;letter-spacing:0.12em;font-weight:700;text-transform:uppercase;">TBTC VIC EAST Proposal Studio</td></tr>');
-  out.push('<tr><td style="padding:32px 28px 8px;">');
+  out.push('<tr><td style="padding:32px 28px;">');
 
   if (heroImageData) {
     out.push(`<div style="margin:0 0 24px;"><img src="${escapeHTML(heroImageData)}" alt="Banner" style="width:100%;height:auto;border-radius:20px;display:block;"></div>`);
   }
 
   if (heroTitle) {
-    out.push(`<div style="font-size:30px;font-weight:800;line-height:1.2;margin:0 0 8px;">${escapeHTML(heroTitle)}</div>`);
+    out.push(`<div style="font-size:28px;font-weight:800;line-height:1.2;margin:0 0 12px;">${escapeHTML(heroTitle)}</div>`);
+  }
+
+  const identityParts = [];
+  if (customer) {
+    identityParts.push(`<div style="font-weight:800;font-size:20px;">${escapeHTML(customer)}</div>`);
+  }
+  if (referenceLine) {
+    identityParts.push(`<span style="display:inline-block;padding:6px 14px;border-radius:999px;background:#EEF2FF;color:#122B5C;font-weight:700;font-size:13px;letter-spacing:0.06em;text-transform:uppercase;">${escapeHTML(referenceLine)}</span>`);
+  }
+  if (identityParts.length) {
+    const identityMargin = heroSubtitle ? '12px' : '24px';
+    out.push(`<div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;margin:0 0 ${identityMargin};">${identityParts.join('')}</div>`);
   }
 
   if (heroSubtitle) {
     out.push(`<div style="font-size:18px;line-height:1.5;color:#5B6573;margin:0 0 24px;">${escapeHTML(heroSubtitle)}</div>`);
-  }
-
-  if (customer) {
-    out.push(`<div style="margin:0 0 12px;"><span style="display:inline-block;padding:8px 16px;border-radius:999px;background:${escapeHTML(panelColor)};color:${pillTextColor};font-weight:700;letter-spacing:0.03em;">${escapeHTML(customer)}</span></div>`);
-  }
-
-  if (referenceLine) {
-    out.push(`<div style="font-weight:600;font-size:14px;color:#5B6573;margin:0 0 16px;">${escapeHTML(referenceLine)}</div>`);
   }
 
   if (hasSummary || hasBenefits) {
@@ -831,7 +795,7 @@ function buildEmailHTML() {
       out.push('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;margin:0 0 24px;">');
       out.push('<tr>');
       out.push('<td style="width:50%;padding:0 12px 0 0;vertical-align:top;">');
-      out.push('<div style="border:1px solid #D7DBE7;border-radius:18px;padding:20px;background:#FAF7F3;">');
+      out.push('<div style="border:1px solid #D7DBE7;border-radius:18px;padding:20px;background:#FFFFFF;">');
       out.push('<div style="font-size:18px;font-weight:700;margin:0 0 8px;">Executive summary</div>');
       out.push(`<div style="font-size:16px;line-height:1.6;margin:0;">${escapeHTML(summary)}</div>`);
       out.push('</div></td>');
@@ -842,7 +806,7 @@ function buildEmailHTML() {
       out.push('</div></td>');
       out.push('</tr></table>');
     } else if (hasSummary) {
-      out.push('<div style="border:1px solid #D7DBE7;border-radius:18px;padding:20px;background:#FAF7F3;margin:0 0 24px;">');
+      out.push('<div style="border:1px solid #D7DBE7;border-radius:18px;padding:20px;background:#FFFFFF;margin:0 0 24px;">');
       out.push('<div style="font-size:18px;font-weight:700;margin:0 0 8px;">Executive summary</div>');
       out.push(`<div style="font-size:16px;line-height:1.6;margin:0;">${escapeHTML(summary)}</div>`);
       out.push('</div>');
@@ -860,33 +824,28 @@ function buildEmailHTML() {
     const legendText = hasHeroFeature && featuresHeader.legend
       ? `<div style="font-size:13px;color:#5B6573;margin:12px 0 0;">${escapeHTML(featuresHeader.legend)}</div>`
       : '';
-    out.push('<div style="margin:0 0 32px;padding-top:8px;border-top:1px solid #E5E6EA;">');
-    out.push(`<div style="font-size:22px;font-weight:800;margin:24px 0 4px;">${titleText}</div>`);
+    out.push('<div style="margin:32px 0;">');
+    out.push(`<div style="font-size:20px;font-weight:800;margin:0 0 4px;">${titleText}</div>`);
     if (subtitleText) {
       out.push(subtitleText);
     }
     if (legendText) {
       out.push(legendText);
     }
-    out.push(`<div style="margin-top:20px;">${renderFeatureGrid(allFeatures, { heroBadge: hasHeroFeature ? 'Key feature' : '' })}</div>`);
+    out.push(`<div style="margin-top:16px;">${renderFeatureGrid(allFeatures, { heroBadge: hasHeroFeature ? 'Key feature' : '' })}</div>`);
     out.push('</div>');
   }
 
-  if (priceRows.length || hasPricingSummary) {
-    out.push('<div style="margin:0 0 32px;padding-top:8px;border-top:1px solid #E5E6EA;">');
-    out.push('<div style="font-size:22px;font-weight:800;margin:24px 0 16px;">Inclusions &amp; pricing breakdown</div>');
-    if (hasPricingSummary) {
-      out.push('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;margin:0 0 20px;">');
-      out.push('<tr>');
-      if (term) {
-        out.push(`<td style="padding:0 16px 0 0;vertical-align:top;font-weight:600;font-size:15px;">Term: ${escapeHTML(term)}</td>`);
-      }
-      if (monthlyDetails.amount) {
-        const gstSuffix = monthlyDetails.gst ? ` <span style="font-weight:400;color:#5B6573;">(${escapeHTML(monthlyDetails.gst)})</span>` : '';
-        out.push(`<td style="padding:0;vertical-align:top;font-weight:600;font-size:15px;">Monthly investment: ${escapeHTML(monthlyDetails.amount)}${gstSuffix}</td>`);
-      }
-      out.push('</tr></table>');
-    }
+  if (heroFeatures.length) {
+    out.push('<div style="margin:32px 0;">');
+    out.push('<div style="font-size:20px;font-weight:800;margin:0 0 12px;">Key features</div>');
+    out.push(`<div style="margin-top:16px;">${renderKeyFeatureStack(heroFeatures)}</div>`);
+    out.push('</div>');
+  }
+
+  if (priceRows.length || hasPricingSummary || hasAssumptions) {
+    out.push('<div style="margin:32px 0;">');
+    out.push('<div style="font-size:22px;font-weight:800;margin:0 0 16px;">Inclusions &amp; pricing breakdown</div>');
     if (priceRows.length) {
       out.push('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;font-size:14px;">');
       out.push('<thead><tr style="background:#EEF2FF;text-align:left;">');
@@ -906,20 +865,36 @@ function buildEmailHTML() {
       }
       out.push('</tbody></table>');
     }
-    out.push('</div>');
-  }
-
-  if (heroFeatures.length) {
-    out.push('<div style="margin:0 0 32px;padding-top:8px;border-top:1px solid #E5E6EA;">');
-    out.push('<div style="font-size:22px;font-weight:800;margin:24px 0 12px;">Key features</div>');
-    out.push(`<div style="margin-top:16px;">${renderKeyFeatureStack(heroFeatures)}</div>`);
-    out.push('</div>');
-  }
-
-  if (hasAssumptions) {
-    out.push('<div style="margin:0 0 8px;padding-top:8px;border-top:1px solid #E5E6EA;">');
-    out.push('<div style="font-size:22px;font-weight:800;margin:24px 0 12px;">Commercial terms &amp; dependencies</div>');
-    out.push(`<ul style="margin:0;padding-left:20px;font-size:15px;line-height:1.6;color:#2C3440;">${assumptions.map((item) => `<li>${item}</li>`).join('')}</ul>`);
+    if (hasAssumptions || hasPricingSummary) {
+      out.push('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;margin:20px 0 0;">');
+      out.push('<tr>');
+      if (hasAssumptions) {
+        const rightPadding = hasPricingSummary ? '12px' : '0';
+        const width = hasPricingSummary ? '50%' : '100%';
+        out.push(`<td style="padding:0 ${rightPadding} 0 0;vertical-align:top;width:${width};">`);
+        out.push('<div style="font-weight:800;font-size:16px;margin:0 0 8px;color:#0B1220;">Commercial terms &amp; dependencies</div>');
+        out.push(`<ul style="margin:0;padding-left:20px;font-size:15px;line-height:1.6;color:#2C3440;">${assumptions.map((item) => `<li>${item}</li>`).join('')}</ul>`);
+        out.push('</td>');
+      }
+      if (hasPricingSummary) {
+        const width = hasAssumptions ? '50%' : '100%';
+        const monthlyText = monthlyDetails.amount
+          ? `${escapeHTML(monthlyDetails.amount)}${monthlyDetails.gst ? ` <span style="font-size:16px;font-weight:600;color:#5B6573;">${escapeHTML(monthlyDetails.gst)}</span>` : ''}`
+          : '';
+        out.push(`<td style="padding:0;vertical-align:top;width:${width};">`);
+        out.push('<div style="border:2px solid #F6F0E8;border-radius:16px;padding:16px;background:#FFFFFF;">');
+        out.push('<div style="font-size:14px;color:#5B6573;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Monthly investment</div>');
+        if (monthlyText) {
+          out.push(`<div style="font-size:28px;font-weight:800;margin:8px 0 4px;color:#0B1220;">${monthlyText}</div>`);
+        }
+        if (term) {
+          out.push(`<div style="font-size:14px;color:#5B6573;font-weight:600;">Term: ${escapeHTML(term)}</div>`);
+        }
+        out.push('</div>');
+        out.push('</td>');
+      }
+      out.push('</tr></table>');
+    }
     out.push('</div>');
   }
 

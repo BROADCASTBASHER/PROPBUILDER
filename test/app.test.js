@@ -738,12 +738,14 @@ test('buildEmailHTML composes full export with escaped content and live data', (
   assert.ok(html.includes('Payment due &amp; accepted &lt;net30&gt;'));
   assert.ok(html.includes('$1,800.00'));
   assert.ok(html.includes('Term: 24 months'));
-  assert.ok(html.includes('Monthly investment: $789.00'));
-  assert.ok(html.includes('(ex GST)'));
-  assert.ok(html.includes('background:#223344'));
+  assert.ok(html.includes('Monthly investment'));
+  assert.ok(html.includes('$789.00 <span'));
+  assert.ok(html.includes('ex GST</span>'));
   const pricingPos = html.indexOf('Inclusions &amp; pricing breakdown');
   const keyFeaturesPos = html.indexOf('Key features');
-  assert.ok(pricingPos >= 0 && keyFeaturesPos > pricingPos, 'Key features section follows pricing breakdown');
+  const featuresPos = html.indexOf('Features &amp; benefits');
+  assert.ok(featuresPos >= 0 && keyFeaturesPos > featuresPos, 'Key features follow the features grid');
+  assert.ok(pricingPos >= 0 && keyFeaturesPos < pricingPos, 'Key features section appears before pricing breakdown');
   assert.ok(html.lastIndexOf('Hero Cloud') > keyFeaturesPos, 'Key features section contains hero content');
   assert.ok(!html.includes('undefined'));
 });
