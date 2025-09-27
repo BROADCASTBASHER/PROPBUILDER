@@ -1504,11 +1504,33 @@ function initializeApp() {
     }
     if (!iconGalleryBuilt) {
       const entries = Object.entries(iconMap)
+ codex/display-all-pictograms-in-modal-73ed4x
+        .filter(([rawName, src]) => {
+          if (typeof rawName !== 'string' || typeof src !== 'string') {
+            return false;
+          }
+          const name = rawName.trim();
+          if (!name) {
+            return false;
+          }
+          const value = src.trim();
+          if (!value) {
+            return false;
+          }
+          if (/^data:image\//i.test(value)) {
+            return true;
+          }
+          if (/^https?:\/\//i.test(value) || value.startsWith('//')) {
+            return true;
+          }
+          return /\.(png|jpe?g|gif|webp|svg)$/i.test(name);
+
         .filter(([name, src]) => {
           if (typeof name !== 'string' || !src) {
             return false;
           }
           return /\.(png|jpe?g)$/i.test(name);
+ main
         })
         .sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: 'base' }));
       iconGallery.innerHTML = "";
@@ -1518,8 +1540,13 @@ function initializeApp() {
         iconGalleryBuilt = true;
         return;
       }
-      for (const [name, src] of entries) {
-        if (!src) {
+      for (const [rawName, rawSrc] of entries) {
+        if (!rawSrc) {
+          continue;
+        }
+        const name = rawName.trim();
+        const src = rawSrc.trim();
+        if (!name || !src) {
           continue;
         }
         const item = doc.createElement('div');

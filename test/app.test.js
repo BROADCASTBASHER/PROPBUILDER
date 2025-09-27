@@ -462,6 +462,18 @@ test('initializeApp populates icon gallery with all bundled pictograms', () => {
     }
   };
 
+ codex/display-all-pictograms-in-modal-73ed4x
+  const iconData = {};
+  for (let i = 1; i <= 112; i += 1) {
+    iconData[`picto-${i}.png`] = `data:image/png;base64,${i}`;
+  }
+  iconData['brandHero'] = 'data:image/png;base64,hero';
+  iconData['photoAsset.JPG'] = 'data:image/jpeg;base64,photo';
+
+  const expectedTitles = Object.keys(iconData).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+
+
+ main
   withDocumentEnvironment({
     ids: {
       iconGallery,
@@ -482,20 +494,31 @@ test('initializeApp populates icon gallery with all bundled pictograms', () => {
     featureLibrary: [],
     windowOverrides: {
       __LOGO_DATA__: {},
+ codex/display-all-pictograms-in-modal-73ed4x
+      __ICON_DATA__: iconData
+
       __ICON_DATA__: {
         'alpha.png': 'data:image/png;base64,AAA=',
         'beta.jpg': 'data:image/jpeg;base64,BBB='
       }
+ main
     }
   }, () => {
     initializeApp();
 
     iconSearch.dispatchEvent({ type: 'input', target: iconSearch });
 
+ codex/display-all-pictograms-in-modal-73ed4x
+    assert.strictEqual(iconGallery.children.length, expectedTitles.length);
+    const titles = iconGallery.children.map((child) => child.title).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    assert.deepStrictEqual(titles, expectedTitles);
+    assert.strictEqual(iconStatus.textContent, `${expectedTitles.length} pictograms available.`);
+
     assert.strictEqual(iconGallery.children.length, 2);
     const titles = iconGallery.children.map((child) => child.title).sort();
     assert.deepStrictEqual(titles, ['alpha.png', 'beta.jpg']);
     assert.strictEqual(iconStatus.textContent, '2 pictograms available.');
+ main
   });
 });
 
