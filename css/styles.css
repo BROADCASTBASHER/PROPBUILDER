@@ -78,6 +78,7 @@ input[type=text],input[type=number],textarea,select{width:100%;padding:12px;bord
   #page1{break-after:page;}
   .pages{border:none;border-radius:0}
   .page{page-break-after:always}
+  .overview{grid-template-columns:1fr 1fr!important;gap:18px!important}
 }
 /* Fonts for in-app; email export re-inlines them */
 
