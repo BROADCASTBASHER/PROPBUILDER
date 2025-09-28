@@ -262,6 +262,7 @@ if (typeof window !== 'undefined') {
 }
 
 let bannerPanelImage = null;
+let toastHideTimer = null;
 
 const readBlobAsDataUrl = (blob) => new Promise((resolve, reject) => {
   if (typeof FileReader !== 'function') {
@@ -332,6 +333,27 @@ const defaultFetchImageAsDataUrl = (url) => {
 };
 
 let fetchImageAsDataUrlImpl = defaultFetchImageAsDataUrl;
+
+function showToastMessage(message, isError = false) {
+  const doc = typeof document !== 'undefined' ? document : null;
+  if (!doc) {
+    return;
+  }
+  const toast = doc.getElementById('toast');
+  if (!toast) {
+    return;
+  }
+  if (toastHideTimer) {
+    clearTimeout(toastHideTimer);
+  }
+  toast.textContent = String(message == null ? '' : message);
+  toast.style.background = isError ? '#F66A51' : '#122B5C';
+  toast.style.display = 'block';
+  toastHideTimer = setTimeout(() => {
+    toast.style.display = 'none';
+    toastHideTimer = null;
+  }, 2400);
+}
 
 function bulletify(input) {
   const lines = String(input == null ? '' : input)
@@ -818,6 +840,7 @@ function initializeApp() {
   const modeBadge = doc.getElementById('modeBadge');
   const topTabs = doc.getElementById('topTabs');
   const emailButton = doc.getElementById('btnEmail');
+  const emailCopyButton = doc.getElementById('btnEmailCopy');
 
   if (!pvSub && pvHero && pvHero.parentElement) {
     pvSub = doc.createElement('div');
@@ -2295,8 +2318,50 @@ function initializeApp() {
       downloadEmailHTML();
     });
   }
+  if (emailCopyButton) {
+    emailCopyButton.addEventListener('click', () => {
+      copyEmailHTML();
+    });
+  }
 }
 
+
+async function copyEmailHTML() {
+  if (typeof navigator === 'undefined') {
+    return;
+  }
+  try {
+    const html = await buildEmailHTML();
+    if (!html) {
+      throw new Error('No email HTML generated');
+    }
+    const { clipboard } = navigator;
+    let copied = false;
+    if (clipboard && typeof clipboard.write === 'function') {
+      try {
+        await clipboard.write([{ mimeType: 'text/html', data: html }]);
+        copied = true;
+      } catch (writeError) {
+        if (typeof console !== 'undefined' && console.warn) {
+          console.warn('Failed to write HTML clipboard payload', writeError);
+        }
+      }
+    }
+    if (!copied && clipboard && typeof clipboard.writeText === 'function') {
+      await clipboard.writeText(html);
+      copied = true;
+    }
+    if (!copied) {
+      throw new Error('Clipboard API unavailable');
+    }
+    showToastMessage('Email HTML copied to clipboard');
+  } catch (error) {
+    if (typeof console !== 'undefined' && console.error) {
+      console.error('Failed to copy email export', error);
+    }
+    showToastMessage('Unable to copy email HTML', true);
+  }
+}
 
 async function downloadEmailHTML() {
   if (typeof document === 'undefined') {
@@ -2332,6 +2397,7 @@ if (typeof module !== 'undefined' && module.exports) {
     bulletify,
     __rgbToHex__px,
     buildEmailHTML,
+    copyEmailHTML,
     initializeApp,
     state,
     PRESETS,
