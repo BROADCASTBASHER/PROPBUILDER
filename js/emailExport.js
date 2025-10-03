@@ -618,25 +618,38 @@ async function renderBanner(banner) {
 
 function buildHeaderSection(proposal, brand) {
   const fontFamily = brand.fontFamily || FALLBACK_FONT_FAMILY;
-  const mutedColor = brand.colorMuted || '#6B6F76';
   const headingColor = brand.colorHeading || '#0B1220';
   const bodyColor = brand.colorText || '#333333';
 
-  const customerLabel = `<tr><td style="font-family:${esc(fontFamily)}; font-size:13px; line-height:1.4; color:${esc(mutedColor)}; text-transform:uppercase; letter-spacing:0.5px;">Customer</td></tr>`;
-  const customerValue = proposal.customer ? `<tr><td style="font-family:${esc(fontFamily)}; font-size:18px; line-height:1.45; font-weight:600; color:${esc(bodyColor)};">${esc(proposal.customer)}</td></tr>` : '';
-  const refLabel = proposal.ref ? `<tr><td style="padding-top:12px; font-family:${esc(fontFamily)}; font-size:13px; line-height:1.4; color:${esc(mutedColor)}; text-transform:uppercase; letter-spacing:0.5px;">Ref</td></tr>` : '';
-  const refValue = proposal.ref ? `<tr><td style="font-family:${esc(fontFamily)}; font-size:16px; line-height:1.4; color:${esc(bodyColor)};">${esc(proposal.ref)}</td></tr>` : '';
-  const headline = proposal.headlineMain ? `<tr><td style="padding-top:20px; font-family:${esc(fontFamily)}; font-size:30px; line-height:1.2; font-weight:600; color:${esc(headingColor)};">${esc(proposal.headlineMain)}</td></tr>` : '';
-  const subheadline = proposal.headlineSub ? `<tr><td style="padding-top:10px; font-family:${esc(fontFamily)}; font-size:18px; line-height:1.45; color:${esc(bodyColor)};">${esc(proposal.headlineSub)}</td></tr>` : '';
+  const headlineParts = [];
+  if (proposal.customer) {
+    headlineParts.push(esc(proposal.customer));
+  }
+  if (proposal.ref) {
+    headlineParts.push(`Ref ${esc(proposal.ref)}`);
+  }
+
+  const headerLine = headlineParts.length
+    ? `<tr><td style="font-family:${esc(fontFamily)}; font-size:18px; line-height:1.45; font-weight:600; color:${esc(bodyColor)};">${headlineParts.join(' • ')}</td></tr>`
+    : '';
+
+  const mainHeadline = proposal.headlineMain
+    ? `<tr><td style="padding-top:${headerLine ? 20 : 0}px; font-family:${esc(fontFamily)}; font-size:30px; line-height:1.2; font-weight:600; color:${esc(headingColor)};">${esc(proposal.headlineMain)}</td></tr>`
+    : '';
+
+  const subPaddingTop = proposal.headlineMain ? 10 : (headerLine ? 20 : 0);
+  const subheadline = proposal.headlineSub
+    ? `<tr><td style="padding-top:${subPaddingTop}px; font-family:${esc(fontFamily)}; font-size:18px; line-height:1.45; color:${esc(bodyColor)};">${esc(proposal.headlineSub)}</td></tr>`
+    : '';
+
+  const rows = [headerLine, mainHeadline, subheadline].filter(Boolean).join('\n');
+  if (!rows) {
+    return '';
+  }
 
   return `<tr><td style="padding:32px 40px 28px 40px;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;">
-      ${customerLabel}
-      ${customerValue}
-      ${refLabel}
-      ${refValue}
-      ${headline}
-      ${subheadline}
+      ${rows}
     </table>
   </td></tr>`;
 }
@@ -648,7 +661,7 @@ function renderExecutiveSummary(summary, brand) {
   const fontFamily = brand.fontFamily || FALLBACK_FONT_FAMILY;
   const bodyColor = brand.colorText || '#333333';
   const sanitized = sanitizeHTML(summary);
-  return `${sectionHeading('Executive summary', brand)}\n${spacerRow(12)}\n<tr><td style="padding:0 40px; font-family:${esc(fontFamily)}; font-size:16px; line-height:1.55; color:${esc(bodyColor)};">${sanitized}</td></tr>`;
+  return `${sectionHeading('Executive Summary', brand)}\n${spacerRow(12)}\n<tr><td style="padding:0 40px; font-family:${esc(fontFamily)}; font-size:16px; line-height:1.55; color:${esc(bodyColor)};">${sanitized}</td></tr>`;
 }
 
 function renderKeyBenefitsSection(benefits, brand) {
@@ -656,7 +669,7 @@ function renderKeyBenefitsSection(benefits, brand) {
   if (!content) {
     return '';
   }
-  return `${sectionHeading('Key benefits', brand)}\n${spacerRow(12)}\n${wrapInSection(content)}`;
+  return `${sectionHeading('Key Benefits', brand)}\n${spacerRow(12)}\n${wrapInSection(content)}`;
 }
 
 function renderPricingTable(html, brand) {
@@ -674,7 +687,7 @@ function renderPriceCard(priceCard, brand) {
   const fontFamily = brand.fontFamily || FALLBACK_FONT_FAMILY;
   const shade = priceCard.shadedBgColor || brand.priceCardShade || '#F3F4F9';
   const sanitized = sanitizeHTML(priceCard.html);
-  return `${sectionHeading('Price', brand)}\n${spacerRow(12)}\n<tr><td style="padding:0 40px;">
+  return `${sectionHeading('Price card', brand)}\n${spacerRow(12)}\n<tr><td style="padding:0 40px;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%; border-radius:16px; background-color:${esc(shade)};">
       <tr>
         <td style="padding:24px; font-family:${esc(fontFamily)}; font-size:16px; line-height:1.55; color:${esc(brand.colorText || '#333333')};">
@@ -683,6 +696,81 @@ function renderPriceCard(priceCard, brand) {
       </tr>
     </table>
   </td></tr>`;
+}
+
+function normalizeDataSources(sources) {
+  if (!sources) {
+    return [];
+  }
+
+  const normalizeItem = (item) => {
+    if (!item) {
+      return '';
+    }
+    if (typeof item === 'string') {
+      return item.trim();
+    }
+    if (typeof item === 'object') {
+      const keys = ['label', 'name', 'title', 'text', 'value'];
+      for (const key of keys) {
+        const value = item[key];
+        if (typeof value === 'string' && value.trim()) {
+          return value.trim();
+        }
+      }
+      if (typeof item.textContent === 'string' && item.textContent.trim()) {
+        return item.textContent.trim();
+      }
+    }
+    return '';
+  };
+
+  if (typeof sources === 'string') {
+    return sources
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+  }
+
+  const iterable = Array.isArray(sources)
+    ? sources
+    : (typeof sources === 'object' && typeof sources[Symbol.iterator] === 'function')
+      ? Array.from(sources)
+      : (typeof sources === 'object' && typeof sources.length === 'number')
+        ? Array.from({ length: sources.length }, (_, index) => sources[index])
+        : Array.isArray(sources?.items)
+          ? sources.items
+          : [];
+
+  return iterable
+    .map((item) => normalizeItem(item))
+    .filter((line) => line.length > 0);
+}
+
+function renderDataSourcesSection(sources, brand) {
+  const items = normalizeDataSources(sources);
+  if (!items.length) {
+    return '';
+  }
+
+  const fontFamily = brand.fontFamily || FALLBACK_FONT_FAMILY;
+  const bodyColor = brand.colorText || '#333333';
+  const rows = items
+    .map((item) => `<tr>
+        <td style="width:18px; font-family:${esc(fontFamily)}; font-size:16px; line-height:1.4; color:${esc(bodyColor)};">•</td>
+        <td style="font-family:${esc(fontFamily)}; font-size:16px; line-height:1.55; color:${esc(bodyColor)}; padding-bottom:6px;">${esc(item)}</td>
+      </tr>`)
+    .join('');
+
+  if (!rows) {
+    return '';
+  }
+
+  const table = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;">
+    ${rows}
+  </table>`;
+
+  return `${sectionHeading('Data sources', brand)}\n${spacerRow(12)}\n${wrapInSection(table)}`;
 }
 
 function renderCommercialTermsSection(terms, brand) {
@@ -746,9 +834,11 @@ async function buildEmailExportHTML(proposal) {
     contentParts.push(bannerHtml);
   }
 
-  contentParts.push(buildHeaderSection(proposal, brand));
-
-  contentParts.push(spacerRow(20));
+  const headerSection = buildHeaderSection(proposal, brand);
+  if (headerSection) {
+    contentParts.push(headerSection);
+    contentParts.push(spacerRow(20));
+  }
 
   const executiveSummaryHtml = renderExecutiveSummary(proposal.executiveSummary, brand);
   if (executiveSummaryHtml) {
@@ -789,14 +879,20 @@ async function buildEmailExportHTML(proposal) {
   }
 
   const priceCardHtml = renderPriceCard(proposal.priceCard, brand);
+  const dataSourcesHtml = renderDataSourcesSection(proposal.dataSources, brand);
+
   if (priceCardHtml) {
     contentParts.push(priceCardHtml);
-    contentParts.push(spacerRow(24));
+    if (dataSourcesHtml) {
+      contentParts.push(spacerRow(24));
+    }
   }
 
-  const commercialTermsHtml = renderCommercialTermsSection(proposal.commercialTerms, brand);
-  if (commercialTermsHtml) {
-    contentParts.push(commercialTermsHtml);
+  if (dataSourcesHtml) {
+    if (!priceCardHtml && contentParts.length) {
+      contentParts.push(spacerRow(24));
+    }
+    contentParts.push(dataSourcesHtml);
   }
 
   const content = contentParts.filter(Boolean).join('\n');

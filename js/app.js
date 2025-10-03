@@ -492,6 +492,275 @@ function getHeroImageData() {
 
 
 
+ codex/refactor-email-export-layout-qkps6u
+const EMAIL_CURRENCY_FORMATTER = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' });
+
+function formatEmailCurrency(value) {
+  const formatted = EMAIL_CURRENCY_FORMATTER.format(Math.max(0, Number(value) || 0));
+  if (formatted.startsWith('$')) {
+    return `A$${formatted.slice(1)}`;
+  }
+  return formatted;
+}
+
+function getEmailFieldValue(doc, id) {
+  if (!doc || typeof doc.getElementById !== 'function') {
+    return '';
+  }
+  const el = doc.getElementById(id);
+  if (!el) {
+    return '';
+  }
+  let raw = '';
+  if (typeof el.value === 'string') {
+    raw = el.value;
+  } else if (typeof el.textContent === 'string') {
+    raw = el.textContent;
+  }
+  return String(raw || '').replace(/\r\n/g, '\n').trim();
+}
+
+function getEmailFieldLines(doc, id) {
+  const value = getEmailFieldValue(doc, id);
+  if (!value) {
+    return [];
+  }
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+function resolveEmailBrand() {
+  const presetKey = state && state.preset;
+  const preset = (PRESETS && presetKey && PRESETS[presetKey]) || (PRESETS && PRESETS.navy) || {};
+  return {
+    fontFamily: "'TelstraText', -apple-system, 'Segoe UI', Roboto, Arial, sans-serif",
+    colorHeading: preset.headline || '#0B1220',
+    colorText: '#273349',
+    colorMuted: '#5B6573',
+    priceCardShade: '#F3F4F9',
+  };
+}
+
+function buildFeaturesForEmail() {
+  if (!Array.isArray(state.features)) {
+    return [];
+  }
+  return state.features
+    .filter((feature) => feature && (feature.t || feature.c || feature.img))
+    .map((feature) => {
+      const title = feature.t ? String(feature.t).trim() : '';
+      const copy = feature.c ? String(feature.c).trim() : '';
+      let description = '';
+      let bullets = [];
+      if (copy.includes('\n')) {
+        bullets = copy.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0);
+      } else {
+        description = copy;
+      }
+      const image = feature.img
+        ? {
+            src: feature.img,
+            width: clampIconSizeValue(feature.size, feature.hero),
+            alt: title || 'Feature image',
+          }
+        : null;
+      return {
+        title,
+        description,
+        bullets,
+        image,
+        isHero: Boolean(feature.hero),
+      };
+    })
+    .filter((feature) => feature.title || feature.description || (feature.bullets && feature.bullets.length) || feature.image);
+}
+
+function buildPricingTableHTMLForEmail(brand) {
+  const items = Array.isArray(state.pricing?.items) ? state.pricing.items : [];
+  const rows = [];
+  items.forEach((item) => {
+    if (!item) {
+      return;
+    }
+    const label = String(item.label || '').trim();
+    const unit = String(item.unit || '').trim();
+    const qtyValue = Number(item.qty);
+    const priceValue = Number(item.price);
+    const hasData = label || unit || Number.isFinite(qtyValue) || Number.isFinite(priceValue);
+    if (!hasData) {
+      return;
+    }
+    const qtyText = Number.isFinite(qtyValue) && qtyValue > 0 ? String(qtyValue) : '';
+    const baseTotal = Number.isFinite(qtyValue) && qtyValue > 0 ? priceValue * qtyValue : priceValue;
+    let priceText = '';
+    if (Number.isFinite(baseTotal) && baseTotal > 0) {
+      const total = state.pricing.gst === 'inc' ? baseTotal * 1.1 : baseTotal;
+      priceText = formatEmailCurrency(total);
+    } else if (Number.isFinite(priceValue) && priceValue > 0) {
+      const total = state.pricing.gst === 'inc' ? priceValue * 1.1 : priceValue;
+      priceText = formatEmailCurrency(total);
+    } else if (label) {
+      priceText = 'Included';
+    }
+    rows.push([
+      label || '&nbsp;',
+      qtyText || '&nbsp;',
+      unit || '&nbsp;',
+      priceText || '&nbsp;',
+    ]);
+  });
+  if (!rows.length) {
+    return '';
+  }
+  const headerLabel = state.pricing.gst === 'inc' ? 'Price (inc GST)' : 'Price (ex GST)';
+  const headerCells = ['Item', 'Qty', 'Unit', headerLabel];
+  const headerHtml = headerCells
+    .map((text) => `<th style="font-family:${esc(brand.fontFamily)}; font-size:15px; font-weight:600; color:${esc(brand.colorHeading)}; background-color:rgba(0, 0, 0, 0.04); padding:12px 10px; text-align:left;">${esc(text)}</th>`)
+    .join('');
+  const rowHtml = rows
+    .map((cells) => `<tr>${cells.map((text) => `<td style="font-family:${esc(brand.fontFamily)}; font-size:15px; line-height:1.55; color:${esc(brand.colorText)}; padding:12px 10px; border-bottom:1px solid rgba(0, 0, 0, 0.08);">${text === '&nbsp;' ? '&nbsp;' : esc(String(text))}</td>`).join('')}</tr>`)
+    .join('');
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%; border:1px solid rgba(0, 0, 0, 0.1); border-radius:16px; overflow:hidden;">`
+    + `<thead><tr>${headerHtml}</tr></thead>`
+    + `<tbody>${rowHtml}</tbody>`
+    + '</table>';
+}
+
+function buildPriceCardForEmail(brand) {
+  const monthlyValue = Number(state.pricing?.monthly) || 0;
+  const termValue = Number(state.pricing?.term) || 0;
+  const displayMonthly = state.pricing?.gst === 'inc' ? monthlyValue * 1.1 : monthlyValue;
+  const gstLabel = state.pricing?.gst === 'inc' ? 'inc GST' : 'ex GST';
+  const amountText = `${formatEmailCurrency(displayMonthly)} ${gstLabel}`;
+  const termText = termValue ? `Term: ${termValue} months` : '';
+  const parts = [];
+  parts.push(`<div style="font-family:${esc(brand.fontFamily)}; font-size:14px; font-weight:600; color:${esc(brand.colorMuted)};">Monthly investment</div>`);
+  parts.push(`<div style="font-family:${esc(brand.fontFamily)}; font-size:30px; font-weight:700; color:${esc(brand.colorHeading)}; margin-top:6px;">${esc(amountText)}</div>`);
+  if (termText) {
+    parts.push(`<div style="font-family:${esc(brand.fontFamily)}; font-size:14px; color:${esc(brand.colorText)}; margin-top:8px;">${esc(termText)}</div>`);
+  }
+  return {
+    show: Boolean(parts.length),
+    html: parts.join(''),
+    shadedBgColor: brand.priceCardShade || '#F3F4F9',
+  };
+}
+
+function captureBannerForEmail(doc) {
+  if (!doc || typeof doc.getElementById !== 'function') {
+    return null;
+  }
+  const canvas = doc.getElementById('banner');
+  if (canvas && typeof canvas.toDataURL === 'function') {
+    try {
+      const data = canvas.toDataURL('image/png', 1.0);
+      if (data && data.startsWith('data:image/')) {
+        return data;
+      }
+    } catch (error) {
+      // ignore canvas read errors
+    }
+  }
+  const fallback = doc.getElementById('pageBanner') || doc.getElementById('pageBanner2');
+  if (fallback && fallback.src) {
+    return {
+      src: fallback.src,
+      alt: fallback.alt || 'Proposal banner',
+    };
+  }
+  return null;
+}
+
+function collectDataSourcesForEmail(doc) {
+  if (!doc || typeof doc.querySelectorAll !== 'function') {
+    return [];
+  }
+
+  const selectorGroups = [
+    '[data-export="data-sources"] [data-export-source]',
+    '[data-export="data-sources"] [data-source]',
+    '[data-export="data-sources"] li',
+    '[data-export-source]',
+    '[data-preview-source]',
+    '[data-selected-source]',
+    '[data-source-item]',
+  ];
+
+  const seen = new Set();
+  const values = [];
+
+  const extractText = (node) => {
+    if (!node) {
+      return '';
+    }
+    if (typeof node.getAttribute === 'function') {
+      const dataValue = node.getAttribute('data-source-label') || node.getAttribute('data-label');
+      if (dataValue && dataValue.trim()) {
+        return dataValue.trim();
+      }
+    }
+    if (typeof node.textContent === 'string' && node.textContent.trim()) {
+      return node.textContent.trim();
+    }
+    if (typeof node.value === 'string' && node.value.trim()) {
+      return node.value.trim();
+    }
+    return '';
+  };
+
+  for (const selector of selectorGroups) {
+    let nodes;
+    try {
+      nodes = doc.querySelectorAll(selector);
+    } catch (error) {
+      nodes = null;
+    }
+    if (!nodes || !nodes.length) {
+      continue;
+    }
+    for (const node of nodes) {
+      const text = extractText(node);
+      if (!text || seen.has(text)) {
+        continue;
+      }
+      seen.add(text);
+      values.push(text);
+    }
+    if (values.length) {
+      break;
+    }
+  }
+
+  return values;
+}
+
+function collectProposalForEmail(doc) {
+  const brand = resolveEmailBrand();
+  const banner = captureBannerForEmail(doc);
+  const summary = getEmailFieldValue(doc, 'summaryEdit');
+  const keyBenefits = getEmailFieldLines(doc, 'benefitsEdit');
+  const terms = getEmailFieldLines(doc, 'assumptionsEdit').join('\n');
+  return {
+    banner,
+    brand,
+    customer: getEmailFieldValue(doc, 'customer'),
+    ref: getEmailFieldValue(doc, 'ref'),
+    headlineMain: getEmailFieldValue(doc, 'hero') || state.banner?.text || '',
+    headlineSub: getEmailFieldValue(doc, 'subHero'),
+    executiveSummary: summary,
+    keyBenefits,
+    features: buildFeaturesForEmail(),
+    pricingTableHTML: buildPricingTableHTMLForEmail(brand),
+    priceCard: buildPriceCardForEmail(brand),
+    commercialTerms: terms,
+    dataSources: collectDataSourcesForEmail(doc),
+  };
+}
+
+
+ main
 function resolveEmailBuilder() {
   if (typeof window !== 'undefined' && window.PropBuilderEmailExport && typeof window.PropBuilderEmailExport.generateEmailExport === 'function') {
     return window.PropBuilderEmailExport.generateEmailExport;
