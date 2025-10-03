@@ -492,7 +492,7 @@ function getHeroImageData() {
 
 
 
- codex/refactor-email-export-layout-qkps6u
+// codex/refactor-email-export-layout-qkps6u
 const EMAIL_CURRENCY_FORMATTER = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' });
 
 function formatEmailCurrency(value) {
@@ -760,7 +760,7 @@ function collectProposalForEmail(doc) {
 }
 
 
- main
+// main
 function resolveEmailBuilder() {
   if (typeof window !== 'undefined' && window.PropBuilderEmailExport && typeof window.PropBuilderEmailExport.generateEmailExport === 'function') {
     return window.PropBuilderEmailExport.generateEmailExport;
@@ -788,12 +788,47 @@ async function buildEmailHTML() {
   const result = await builder(doc);
   return result && result.html ? result.html : '';
 }
+
+function triggerDownloadFromText(doc, filename, text, mimeType = 'text/plain;charset=utf-8') {
+  if (!doc || !filename) {
+    return;
+  }
+  const body = doc.body || doc.documentElement;
+  if (!body) {
+    return;
+  }
+  const safeText = typeof text === 'string' ? text : '';
+  let url = null;
+  let link = null;
+  try {
+    if (typeof Blob === 'function' && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+      const blob = new Blob([safeText], { type: mimeType });
+      url = URL.createObjectURL(blob);
+    } else {
+      url = `data:${mimeType},${encodeURIComponent(safeText)}`;
+    }
+    link = doc.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.style.display = 'none';
+    body.appendChild(link);
+    link.click();
+  } finally {
+    if (link && link.parentNode) {
+      link.parentNode.removeChild(link);
+    }
+    if (url && url.startsWith('blob:') && typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
+      URL.revokeObjectURL(url);
+    }
+  }
+}
 function initializeApp() {
   if (typeof document === 'undefined') {
     return;
   }
 
   const doc = document;
+  const exportEmailBtn = doc.getElementById('btnExportEmail');
   const logoMap = (typeof window !== 'undefined' && window.__LOGO_DATA__ && typeof window.__LOGO_DATA__ === 'object')
     ? window.__LOGO_DATA__
     : {};
@@ -2305,6 +2340,22 @@ function initializeApp() {
       doc.body.appendChild(link);
       link.click();
       doc.body.removeChild(link);
+    });
+  }
+
+  if (exportEmailBtn && typeof exportEmailBtn.addEventListener === 'function') {
+    exportEmailBtn.addEventListener('click', async () => {
+      try {
+        const html = await buildEmailHTML();
+        if (!html) {
+          throw new Error('No email markup generated');
+        }
+        triggerDownloadFromText(doc, 'proposal-email.html', html, 'text/html;charset=utf-8');
+      } catch (error) {
+        if (typeof console !== 'undefined' && console && typeof console.error === 'function') {
+          console.error('Unable to export email HTML', error);
+        }
+      }
     });
   }
 
