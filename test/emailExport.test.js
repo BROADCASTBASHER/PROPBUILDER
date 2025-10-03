@@ -2,176 +2,205 @@ const test = require('node:test');
 const assert = require('node:assert');
 
 const {
-  __private: { imgElementToDataURI, inlineBackgroundImage },
+  __private: { inlineAllRasterImages, inlineBackgroundImage },
 } = require('../js/emailExport.js');
 
-function setupCanvasEnvironment(t, { expectedType, dataUri, width = 100, height = 50 }) {
-  const originalFetch = global.fetch;
-  const originalDocument = global.document;
-  const OriginalImage = global.Image;
+const createStyle = () => ({
+  backgroundImage: '',
+  width: '',
+  height: '',
+  display: '',
+  border: '',
+  maxWidth: '',
+});
 
-  t.after(() => {
-    global.fetch = originalFetch;
+test('inlineBackgroundImage resolves URLs to HTTPS', async () => {
+  const originalDocument = global.document;
+  const originalGetComputedStyle = global.getComputedStyle;
+
+  const element = {
+    style: createStyle(),
+  };
+
+  try {
+    global.document = { baseURI: 'http://example.com/base/index.html' };
+    global.getComputedStyle = () => ({ backgroundImage: 'url("/assets/bg.png"), linear-gradient(red, blue)' });
+
+    element.style.backgroundImage = 'url("http://cdn.example.com/legacy.jpg")';
+
+    const warnings = [];
+    await inlineBackgroundImage(element, warnings, {});
+
+    assert.deepStrictEqual(warnings, []);
+    assert.strictEqual(
+      element.style.backgroundImage,
+      'url("https://cdn.example.com/legacy.jpg")'
+    );
+  } finally {
     if (originalDocument === undefined) {
       delete global.document;
     } else {
       global.document = originalDocument;
     }
-    if (OriginalImage === undefined) {
-      delete global.Image;
-    } else {
-      global.Image = OriginalImage;
-    }
-  });
-
-  const canvas = {
-    width: 0,
-    height: 0,
-    getContext() {
-      return {
-        drawImage() {},
-      };
-    },
-    toDataURL(type) {
-      if (expectedType) {
-        assert.strictEqual(type, expectedType);
-      }
-      return dataUri;
-    },
-  };
-
-  global.document = {
-    baseURI: 'https://example.com/',
-    createElement(tag) {
-      assert.strictEqual(tag, 'canvas');
-      return canvas;
-    },
-  };
-
-  class FakeImage {
-    constructor() {
-      this._src = '';
-      this.naturalWidth = width;
-      this.naturalHeight = height;
-      this.crossOrigin = '';
-      this.decoding = '';
-      this.referrerPolicy = '';
-    }
-
-    async decode() {
-      return undefined;
-    }
-
-    set src(value) {
-      this._src = value;
-    }
-
-    get src() {
-      return this._src;
-    }
-  }
-
-  global.Image = FakeImage;
-}
-
-test('imgElementToDataURI falls back to canvas when fetch fails', async (t) => {
-  setupCanvasEnvironment(t, {
-    expectedType: 'image/png',
-    dataUri: 'data:image/png;base64,fallback',
-  });
-
-  let fetchCalls = 0;
-  global.fetch = async () => {
-    fetchCalls += 1;
-    throw new Error('network failure');
-  };
-
-  const img = {
-    currentSrc: 'https://example.com/image.png',
-    src: 'https://example.com/image.png',
-    alt: 'Remote image',
-  };
-
-  const warnings = [];
-  const result = await imgElementToDataURI(img, warnings);
-
-  assert.strictEqual(fetchCalls, 1);
-  assert.deepStrictEqual(result, {
-    dataUri: 'data:image/png;base64,fallback',
-    mime: 'image/png',
-  });
-  assert.deepStrictEqual(warnings, []);
-});
-
-
-test('imgElementToDataURI skips fetch for file URLs', async (t) => {
-  setupCanvasEnvironment(t, {
-    expectedType: 'image/jpeg',
-    dataUri: 'data:image/jpeg;base64,local',
-    width: 80,
-    height: 60,
-  });
-
-  let fetchCalls = 0;
-  global.fetch = async () => {
-    fetchCalls += 1;
-    throw new Error('should not fetch file URLs');
-  };
-
-  const img = {
-    currentSrc: 'file:///Users/alex/Pictures/local.jpg',
-    src: 'file:///Users/alex/Pictures/local.jpg',
-    alt: 'Local image',
-  };
-
-  const warnings = [];
-  const result = await imgElementToDataURI(img, warnings);
-
-  assert.strictEqual(fetchCalls, 0);
-  assert.deepStrictEqual(result, {
-    dataUri: 'data:image/jpeg;base64,local',
-    mime: 'image/jpeg',
-  });
-  assert.deepStrictEqual(warnings, []);
-});
-
-test('inlineBackgroundImage falls back to canvas data when fetch fails', async (t) => {
-  setupCanvasEnvironment(t, {
-    expectedType: 'image/png',
-    dataUri: 'data:image/png;base64,canvasbg',
-  });
-
-  let fetchCalls = 0;
-  global.fetch = async () => {
-    fetchCalls += 1;
-    throw new Error('network failure');
-  };
-
-  const originalGetComputedStyle = global.getComputedStyle;
-  t.after(() => {
     if (originalGetComputedStyle === undefined) {
       delete global.getComputedStyle;
     } else {
       global.getComputedStyle = originalGetComputedStyle;
     }
-  });
+  }
+});
 
-  const styleString = 'url("https://example.com/assets/bg.png")';
-  const element = {
-    style: {
-      backgroundImage: styleString,
+test('inlineAllRasterImages keeps HTTPS and uploads canvases', async () => {
+  const originalDocument = global.document;
+  const originalFetch = global.fetch;
+  const originalBlob = global.Blob;
+  const originalGetComputedStyle = global.getComputedStyle;
+
+  const createdImages = [];
+
+  const documentMock = {
+    baseURI: 'http://example.com/app/',
+    createElement(tag) {
+      assert.strictEqual(tag, 'img');
+      const style = createStyle();
+      const attributes = {};
+      const node = {
+        tagName: 'IMG',
+        style,
+        attributes,
+        naturalWidth: 0,
+        naturalHeight: 0,
+        setAttribute(name, value) {
+          attributes[name] = String(value);
+        },
+        removeAttribute(name) {
+          delete attributes[name];
+        },
+        getBoundingClientRect() {
+          return { width: this._rectWidth || 120, height: this._rectHeight || 80 };
+        },
+      };
+      createdImages.push(node);
+      return node;
     },
   };
 
-  global.getComputedStyle = () => ({ backgroundImage: styleString });
+  const canvas = {
+    width: 320,
+    height: 180,
+    clientWidth: 320,
+    clientHeight: 180,
+    style: createStyle(),
+    toBlob(callback) {
+      const blob = new Blob(['canvasdata'], { type: 'image/png' });
+      callback(blob);
+    },
+    replaceWith(node) {
+      canvases.length = 0;
+      images.push(node);
+      allElements.push(node);
+    },
+  };
+
+  const image = {
+    src: '/media/photo.jpg',
+    currentSrc: '/media/photo.jpg',
+    style: createStyle(),
+    naturalWidth: 640,
+    naturalHeight: 320,
+    attributes: { srcset: 'x' },
+    removeAttribute(name) {
+      delete this.attributes[name];
+    },
+    setAttribute(name, value) {
+      this.attributes[name] = String(value);
+    },
+    getBoundingClientRect() {
+      return { width: 200, height: 100 };
+    },
+  };
+
+  const backgroundElement = {
+    style: { backgroundImage: 'url("/bg/pattern.png")' },
+  };
+
+  const canvases = [canvas];
+  const images = [image];
+  const allElements = [backgroundElement];
+
+  const root = {
+    querySelectorAll(selector) {
+      if (selector === 'canvas') {
+        return canvases;
+      }
+      if (selector === 'img') {
+        return images;
+      }
+      if (selector === '*') {
+        return allElements;
+      }
+      return [];
+    },
+  };
 
   const warnings = [];
-  await inlineBackgroundImage(element, warnings);
 
-  assert.strictEqual(fetchCalls, 1);
-  assert.deepStrictEqual(warnings, []);
-  assert.ok(
-    element.style.backgroundImage.includes('data:image/png;base64,canvasbg'),
-    'background should be replaced with canvas data URI'
-  );
+  try {
+    global.document = documentMock;
+    global.fetch = undefined;
+    global.getComputedStyle = (node) => node.style || createStyle();
+
+    const uploadCalls = [];
+    const options = {
+      uploadCanvas: async ({ blob }) => {
+        uploadCalls.push(blob);
+        assert.strictEqual(blob.type, 'image/png');
+        return 'https://cdn.example.com/uploaded/canvas.png';
+      },
+    };
+
+    await inlineAllRasterImages(root, warnings, options);
+
+    assert.strictEqual(uploadCalls.length, 1);
+    assert.deepStrictEqual(warnings, []);
+
+    assert.strictEqual(images[1].src, 'https://cdn.example.com/uploaded/canvas.png');
+    assert.strictEqual(images[1].style.display, 'block');
+    assert.strictEqual(images[1].style.border, '0');
+    assert.strictEqual(images[1].attributes.width, '320');
+    assert.strictEqual(images[1].attributes.height, '180');
+
+    assert.strictEqual(image.src, 'https://example.com/media/photo.jpg');
+    assert.strictEqual(image.style.display, 'block');
+    assert.strictEqual(image.style.border, '0');
+    assert.strictEqual(image.attributes.width, '200');
+    assert.strictEqual(image.attributes.height, '100');
+    assert.strictEqual(image.attributes.srcset, undefined);
+
+    assert.strictEqual(
+      backgroundElement.style.backgroundImage,
+      'url("https://example.com/bg/pattern.png")'
+    );
+  } finally {
+    if (originalDocument === undefined) {
+      delete global.document;
+    } else {
+      global.document = originalDocument;
+    }
+    if (originalFetch === undefined) {
+      delete global.fetch;
+    } else {
+      global.fetch = originalFetch;
+    }
+    if (originalBlob === undefined) {
+      delete global.Blob;
+    } else {
+      global.Blob = originalBlob;
+    }
+    if (originalGetComputedStyle === undefined) {
+      delete global.getComputedStyle;
+    } else {
+      global.getComputedStyle = originalGetComputedStyle;
+    }
+  }
 });
