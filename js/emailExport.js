@@ -848,9 +848,329 @@ async function buildEmailExportHTML(proposal) {
   };
 }
 
+function getPreviewRoot(doc) {
+  if (!doc || typeof doc.querySelector !== 'function') {
+    return null;
+  }
+  return doc.getElementById('tab-preview') || doc;
+}
+
+function selectFirst(root, selectors) {
+  if (!root || typeof root.querySelector !== 'function') {
+    return null;
+  }
+  for (const selector of selectors) {
+    if (!selector) {
+      continue;
+    }
+    const found = root.querySelector(selector);
+    if (found) {
+      return found;
+    }
+  }
+  return null;
+}
+
+function normaliseInline(text) {
+  if (!text) {
+    return '';
+  }
+  return String(text)
+    .replace(/\u00A0/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normaliseMultiline(text) {
+  if (!text) {
+    return '';
+  }
+  return String(text)
+    .replace(/\u00A0/g, ' ')
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .join('\n');
+}
+
+function textFromElement(el, options = {}) {
+  if (!el) {
+    return '';
+  }
+  const { preserveLineBreaks = false } = options;
+  const raw = el.textContent || '';
+  return preserveLineBreaks ? normaliseMultiline(raw) : normaliseInline(raw);
+}
+
+function collectListItems(listEl) {
+  if (!listEl) {
+    return [];
+  }
+  return Array.from(listEl.querySelectorAll('li'))
+    .map((item) => normaliseInline(item.textContent || ''))
+    .filter((value) => value.length > 0);
+}
+
+function parsePx(value) {
+  if (value == null) {
+    return Number.NaN;
+  }
+  const match = String(value).match(/(-?\d+(?:\.\d+)?)/);
+  if (!match) {
+    return Number.NaN;
+  }
+  return Number.parseFloat(match[1]);
+}
+
+function collectFeaturesFromPreview(root) {
+  if (!root) {
+    return [];
+  }
+  const cards = Array.from(root.querySelectorAll('[data-export-feature="card"]'));
+  const features = [];
+  for (const card of cards) {
+    const context = card.getAttribute('data-export-feature-context');
+    if (context && context !== 'preview') {
+      continue;
+    }
+    const type = card.getAttribute('data-export-feature-type') || 'standard';
+    const titleEl = card.querySelector('[data-export-feature-title]');
+    const copyEl = card.querySelector('[data-export-feature-copy]');
+    const listEl = card.querySelector('[data-export-feature-list]');
+    const imageEl = card.querySelector('[data-export-feature-image]');
+    const title = textFromElement(titleEl);
+    const description = copyEl ? textFromElement(copyEl, { preserveLineBreaks: true }) : '';
+    const bullets = listEl ? collectListItems(listEl) : [];
+
+    let image = null;
+    if (imageEl && imageEl.src) {
+      const wrapper = imageEl.closest('.icon');
+      const width = wrapper ? parsePx(wrapper.style?.width) : Number.NaN;
+      const height = wrapper ? parsePx(wrapper.style?.height) : Number.NaN;
+      image = {
+        src: imageEl.src,
+        alt: imageEl.alt || title || 'Feature image',
+      };
+      if (Number.isFinite(width) && width > 0) {
+        image.width = Math.round(width);
+      }
+      if (Number.isFinite(height) && height > 0) {
+        image.height = Math.round(height);
+      }
+    }
+
+    if (!title && !description && !bullets.length && !image) {
+      continue;
+    }
+
+    features.push({
+      title,
+      description: bullets.length ? '' : description,
+      bullets,
+      image,
+      isHero: type === 'hero',
+    });
+  }
+  return features;
+}
+
+function collectKeyBenefitsFromPreview(root) {
+  const list = selectFirst(root, ['#keyBenefits', '#pvBenefits', '[data-export="key-benefits"]']);
+  return collectListItems(list);
+}
+
+function collectCommercialTermsFromPreview(root) {
+  const list = selectFirst(root, ['#termsDependencies', '#assumptions', '[data-export="terms-dependencies"]']);
+  const items = collectListItems(list);
+  return items.join('\n');
+}
+
+function collectPricingTableHTMLFromPreview(root, brand) {
+  const table = selectFirst(root, ['#pricingTable', '#priceTableView', '[data-export="pricing-table"]']);
+  if (!table) {
+    return '';
+  }
+  const headerCells = Array.from(table.querySelectorAll('thead th'));
+  const bodyRows = Array.from(table.querySelectorAll('tbody tr'));
+  const rows = [];
+  for (const row of bodyRows) {
+    const cells = Array.from(row.children || [])
+      .map((cell) => normaliseInline(cell.textContent || ''));
+    const hasData = cells.some((cell) => cell && cell.length > 0);
+    if (!hasData) {
+      continue;
+    }
+    rows.push(cells);
+  }
+  if (!rows.length) {
+    return '';
+  }
+  const fontFamily = brand?.fontFamily || FALLBACK_FONT_FAMILY;
+  const headingColor = brand?.colorHeading || '#0B1220';
+  const bodyColor = brand?.colorText || '#333333';
+  const headerHtml = headerCells
+    .map((cell) => `<th style="font-family:${esc(fontFamily)}; font-size:15px; font-weight:600; color:${esc(headingColor)}; background-color:rgba(0, 0, 0, 0.04); padding:12px 10px; text-align:left;">${esc(normaliseInline(cell.textContent || ''))}</th>`)
+    .join('');
+  const rowHtml = rows
+    .map((cells) => `<tr>${cells
+      .map((text) => {
+        const content = text ? esc(text) : '&nbsp;';
+        return `<td style="font-family:${esc(fontFamily)}; font-size:15px; line-height:1.55; color:${esc(bodyColor)}; padding:12px 10px; border-bottom:1px solid rgba(0, 0, 0, 0.08);">${content}</td>`;
+      })
+      .join('')}</tr>`)
+    .join('');
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%; border:1px solid rgba(0, 0, 0, 0.1); border-radius:16px; overflow:hidden;">`
+    + `<thead><tr>${headerHtml}</tr></thead>`
+    + `<tbody>${rowHtml}</tbody>`
+    + '</table>';
+}
+
+function collectPriceCardFromPreview(root, brand) {
+  const card = selectFirst(root, ['[data-export="price-card"]', '#priceCard']);
+  if (!card) {
+    return { show: false, html: '', shadedBgColor: brand?.priceCardShade || '#F3F4F9' };
+  }
+  const amountEl = selectFirst(card, ['[data-export="price-amount"]', '#pvMonthly']);
+  const termEl = selectFirst(card, ['[data-export="price-term"]', '#pvTerm2']);
+  const amountText = textFromElement(amountEl);
+  const termText = textFromElement(termEl);
+  if (!amountText && !termText) {
+    return { show: false, html: '', shadedBgColor: brand?.priceCardShade || '#F3F4F9' };
+  }
+  const fontFamily = brand?.fontFamily || FALLBACK_FONT_FAMILY;
+  const headingColor = brand?.colorHeading || '#0B1220';
+  const textColor = brand?.colorText || '#333333';
+  const mutedColor = brand?.colorMuted || '#6B6F76';
+  const parts = [`<div style="font-family:${esc(fontFamily)}; font-size:14px; font-weight:600; color:${esc(mutedColor)};">Monthly investment</div>`];
+  if (amountText) {
+    parts.push(`<div style="font-family:${esc(fontFamily)}; font-size:30px; font-weight:700; color:${esc(headingColor)}; margin-top:6px;">${esc(amountText)}</div>`);
+  }
+  if (termText) {
+    parts.push(`<div style="font-family:${esc(fontFamily)}; font-size:14px; color:${esc(textColor)}; margin-top:8px;">${esc(termText)}</div>`);
+  }
+
+  let shadedBgColor = brand?.priceCardShade || '#F3F4F9';
+  if (typeof window !== 'undefined' && typeof window.getComputedStyle === 'function') {
+    try {
+      const styles = window.getComputedStyle(card);
+      if (styles && styles.backgroundColor && styles.backgroundColor !== 'rgba(0, 0, 0, 0)') {
+        shadedBgColor = styles.backgroundColor;
+      }
+    } catch (error) {
+      // ignore computed style errors
+    }
+  }
+
+  return {
+    show: parts.length > 0,
+    html: parts.join(''),
+    shadedBgColor,
+  };
+}
+
+function collectBrandFromPreview(root) {
+  const fallback = normalizeBrand(null);
+  if (!root) {
+    return fallback;
+  }
+  if (typeof window === 'undefined' || typeof window.getComputedStyle !== 'function') {
+    return fallback;
+  }
+  const headlineEl = selectFirst(root, ['#mainHeadline', '#pvHero', '[data-export="headline-main"]']);
+  const bodyEl = selectFirst(root, ['#executiveSummary', '#pvSummary', '[data-export="exec-summary"]']);
+  const mutedEl = selectFirst(root, ['#proposalRef', '#pvRef', '[data-export="ref"]', '[data-export="price-term"]']);
+  const fontEl = headlineEl || bodyEl || root;
+  const styles = (element) => {
+    try {
+      return window.getComputedStyle(element);
+    } catch (error) {
+      return null;
+    }
+  };
+  const fontStyles = styles(fontEl);
+  const headingStyles = headlineEl ? styles(headlineEl) : null;
+  const bodyStyles = bodyEl ? styles(bodyEl) : null;
+  const mutedStyles = mutedEl ? styles(mutedEl) : null;
+  return normalizeBrand({
+    fontFamily: fontStyles?.fontFamily || fallback.fontFamily,
+    colorHeading: headingStyles?.color || fallback.colorHeading,
+    colorText: bodyStyles?.color || fallback.colorText,
+    colorMuted: mutedStyles?.color || fallback.colorMuted,
+    priceCardShade: fallback.priceCardShade,
+  });
+}
+
+function capturePreviewBanner(doc) {
+  if (!doc) {
+    return null;
+  }
+  const canvas = typeof doc.getElementById === 'function' ? doc.getElementById('banner') : null;
+  if (canvas && typeof canvas.toDataURL === 'function') {
+    try {
+      const dataUri = canvas.toDataURL('image/png', 1.0);
+      if (dataUri && dataUri.startsWith('data:image/')) {
+        return dataUri;
+      }
+    } catch (error) {
+      // ignore canvas failures and fall back
+    }
+  }
+  const img = selectFirst(doc, ['[data-export="banner-image"]', '#pageBanner', '#pageBanner2']);
+  if (img && img.src) {
+    return {
+      src: img.src,
+      alt: img.alt || 'Proposal banner',
+    };
+  }
+  return null;
+}
+
+function collectPreviewProposal(doc) {
+  const root = getPreviewRoot(doc);
+  const brand = collectBrandFromPreview(root);
+  const customerEl = selectFirst(root, ['#customerName', '#pvCustomer', '[data-export="customer"]']);
+  const refEl = selectFirst(root, ['#proposalRef', '#pvRef', '[data-export="ref"]']);
+  const headlineEl = selectFirst(root, ['#mainHeadline', '#pvHero', '[data-export="headline-main"]']);
+  const subHeadlineEl = selectFirst(root, ['#subHeadline', '#pvSub', '[data-export="headline-sub"]']);
+  const summaryEl = selectFirst(root, ['#executiveSummary', '#pvSummary', '[data-export="exec-summary"]']);
+
+  let customer = textFromElement(customerEl);
+  if (customer && customer.replace(/\s+/g, ' ').trim().toLowerCase() === 'customer') {
+    customer = '';
+  }
+  const refText = textFromElement(refEl);
+  const normalizedRef = refText ? refText.replace(/^ref:\s*/i, '').trim() : '';
+
+  return {
+    banner: capturePreviewBanner(doc),
+    brand,
+    customer,
+    ref: normalizedRef,
+    headlineMain: textFromElement(headlineEl),
+    headlineSub: textFromElement(subHeadlineEl),
+    executiveSummary: textFromElement(summaryEl, { preserveLineBreaks: true }),
+    keyBenefits: collectKeyBenefitsFromPreview(root),
+    features: collectFeaturesFromPreview(root),
+    pricingTableHTML: collectPricingTableHTMLFromPreview(root, brand),
+    priceCard: collectPriceCardFromPreview(root, brand),
+    commercialTerms: collectCommercialTermsFromPreview(root),
+  };
+}
+
+async function generateEmailExport(rootDocument) {
+  const doc = rootDocument || (typeof document !== 'undefined' ? document : null);
+  if (!doc) {
+    throw new Error('A document is required to generate the email export');
+  }
+  const proposal = collectPreviewProposal(doc);
+  const result = await buildEmailExportHTML(proposal);
+  return { html: result?.html || '' };
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
-    buildEmailExportHTML,
+    generateEmailExport,
     // exporting helpers for potential testing
     __private: {
       sanitizeHTML,
@@ -859,11 +1179,12 @@ if (typeof module !== 'undefined' && module.exports) {
       inlineAllRasterImages,
       imgElementToDataURI,
       inlineBackgroundImage,
+      buildEmailExportHTML,
     },
   };
 }
 
 if (typeof window !== 'undefined') {
   window.PropBuilderEmailExport = window.PropBuilderEmailExport || {};
-  window.PropBuilderEmailExport.buildEmailExportHTML = buildEmailExportHTML;
+  window.PropBuilderEmailExport.generateEmailExport = generateEmailExport;
 }
