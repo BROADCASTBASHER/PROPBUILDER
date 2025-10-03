@@ -672,6 +672,69 @@ function captureBannerForEmail(doc) {
   return null;
 }
 
+function collectDataSourcesForEmail(doc) {
+  if (!doc || typeof doc.querySelectorAll !== 'function') {
+    return [];
+  }
+
+  const selectorGroups = [
+    '[data-export="data-sources"] [data-export-source]',
+    '[data-export="data-sources"] [data-source]',
+    '[data-export="data-sources"] li',
+    '[data-export-source]',
+    '[data-preview-source]',
+    '[data-selected-source]',
+    '[data-source-item]',
+  ];
+
+  const seen = new Set();
+  const values = [];
+
+  const extractText = (node) => {
+    if (!node) {
+      return '';
+    }
+    if (typeof node.getAttribute === 'function') {
+      const dataValue = node.getAttribute('data-source-label') || node.getAttribute('data-label');
+      if (dataValue && dataValue.trim()) {
+        return dataValue.trim();
+      }
+    }
+    if (typeof node.textContent === 'string' && node.textContent.trim()) {
+      return node.textContent.trim();
+    }
+    if (typeof node.value === 'string' && node.value.trim()) {
+      return node.value.trim();
+    }
+    return '';
+  };
+
+  for (const selector of selectorGroups) {
+    let nodes;
+    try {
+      nodes = doc.querySelectorAll(selector);
+    } catch (error) {
+      nodes = null;
+    }
+    if (!nodes || !nodes.length) {
+      continue;
+    }
+    for (const node of nodes) {
+      const text = extractText(node);
+      if (!text || seen.has(text)) {
+        continue;
+      }
+      seen.add(text);
+      values.push(text);
+    }
+    if (values.length) {
+      break;
+    }
+  }
+
+  return values;
+}
+
 function collectProposalForEmail(doc) {
   const brand = resolveEmailBrand();
   const banner = captureBannerForEmail(doc);
@@ -691,6 +754,7 @@ function collectProposalForEmail(doc) {
     pricingTableHTML: buildPricingTableHTMLForEmail(brand),
     priceCard: buildPriceCardForEmail(brand),
     commercialTerms: terms,
+    dataSources: collectDataSourcesForEmail(doc),
   };
 }
 

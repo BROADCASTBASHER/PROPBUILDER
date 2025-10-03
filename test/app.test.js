@@ -112,7 +112,7 @@ test('buildEmailHTML produces inline email markup', async () => {
     const html = await buildEmailHTML();
     assert.ok(html.includes('Acme Pty Ltd'));
     assert.ok(html.includes('Unified Communications'));
-    assert.ok(html.includes('Key benefits'));
+    assert.ok(html.includes('Key Benefits'));
     assert.ok(html.includes('Monthly investment'));
     assert.ok(html.includes('Term: 24 months'));
     assert.ok(html.includes('data:image/png;base64,banner'));
