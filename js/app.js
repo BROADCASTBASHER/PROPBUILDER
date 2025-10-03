@@ -492,6 +492,7 @@ function getHeroImageData() {
 
 
 
+ codex/refactor-email-export-layout-qkps6u
 const EMAIL_CURRENCY_FORMATTER = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' });
 
 function formatEmailCurrency(value) {
@@ -758,14 +759,16 @@ function collectProposalForEmail(doc) {
   };
 }
 
+
+ main
 function resolveEmailBuilder() {
-  if (typeof window !== 'undefined' && window.PropBuilderEmailExport && typeof window.PropBuilderEmailExport.buildEmailExportHTML === 'function') {
-    return window.PropBuilderEmailExport.buildEmailExportHTML;
+  if (typeof window !== 'undefined' && window.PropBuilderEmailExport && typeof window.PropBuilderEmailExport.generateEmailExport === 'function') {
+    return window.PropBuilderEmailExport.generateEmailExport;
   }
   try {
     const mod = require('./emailExport');
-    if (mod && typeof mod.buildEmailExportHTML === 'function') {
-      return mod.buildEmailExportHTML;
+    if (mod && typeof mod.generateEmailExport === 'function') {
+      return mod.generateEmailExport;
     }
   } catch (error) {
     // ignore module resolution errors in browser
@@ -782,8 +785,7 @@ async function buildEmailHTML() {
   if (!builder) {
     throw new Error('Email export builder unavailable');
   }
-  const proposal = collectProposalForEmail(doc);
-  const result = await builder(proposal);
+  const result = await builder(doc);
   return result && result.html ? result.html : '';
 }
 function initializeApp() {

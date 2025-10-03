@@ -1,4 +1,4 @@
-const EMAIL_MAX_WIDTH = 680;
+const EMAIL_MAX_WIDTH = 600;
 const DEFAULT_EMAIL_WIDTH = EMAIL_MAX_WIDTH;
 const DEFAULT_IMAGE_WIDTH = 320;
 const DEFAULT_IMAGE_HEIGHT = 180;
@@ -139,17 +139,47 @@ async function imgElementToDataURI(img, warnings) {
   }
 }
 
-async function canvasToDataImg(canvas, warnings) {
+function getBaseHref() {
+  if (typeof document !== 'undefined' && document?.baseURI) {
+    return document.baseURI;
+  }
+  if (typeof location !== 'undefined' && location?.href) {
+    return location.href;
+  }
+  return 'http://localhost/';
+}
+
+function toAbsoluteHttpsUrl(value, baseHref = getBaseHref()) {
+  if (!value) {
+    return null;
+  }
+
+  if (/^data:/i.test(value)) {
+    return value;
+  }
+
   try {
-    const dataUri = canvas.toDataURL('image/png', 1.0);
-    return { dataUri, mime: 'image/png' };
+    const resolved = new URL(value, baseHref);
+    if (resolved.protocol === 'http:' || resolved.protocol === 'https:') {
+      resolved.protocol = 'https:';
+      return resolved.href;
+    }
+    if (!resolved.protocol || resolved.protocol === ':') {
+      resolved.protocol = 'https:';
+      return resolved.href;
+    }
+    return resolved.href;
   } catch (error) {
-    warnings.push(`Canvas inline failed: ${error?.message || error}`);
     return null;
   }
 }
 
-async function inlineBackgroundImage(el, warnings) {
+function cssUrl(url) {
+  const safe = String(url ?? '').replace(/['"\\]/g, '\\$&');
+  return `url("${safe}")`;
+}
+
+async function inlineBackgroundImage(el, warnings, options = {}) {
   const computed = getComputedStyle(el);
   const backgroundCandidates = [];
   const inlineBg = el.style?.backgroundImage;
@@ -164,120 +194,216 @@ async function inlineBackgroundImage(el, warnings) {
     return;
   }
 
-  const matchUrl = (value) => {
+  const baseHref = options?.baseHref || getBaseHref();
+
+  const rewrite = (value) => {
     if (!value) {
-      return [];
+      return value;
     }
-    return [...value.matchAll(/url\((['"]?)(.*?)\1\)/g)].map((match) => match[2]).filter(Boolean);
+    return value.replace(/url\((['"]?)(.*?)\1\)/g, (match, quote, rawUrl) => {
+      if (!rawUrl || /^data:/i.test(rawUrl)) {
+        return match;
+      }
+      const absolute = toAbsoluteHttpsUrl(rawUrl, baseHref);
+      if (!absolute) {
+        warnings.push(`BG image inline failed: ${rawUrl} — unable to resolve URL`);
+        return match;
+      }
+      return cssUrl(absolute);
+    });
   };
 
-  const urls = new Set();
-  for (const value of backgroundCandidates) {
-    for (const found of matchUrl(value)) {
-      if (!found || found.startsWith('data:')) {
-        continue;
-      }
-      urls.add(found);
-    }
-  }
-
-  if (!urls.size) {
+  const updatedInline = rewrite(inlineBg);
+  if (updatedInline && updatedInline !== inlineBg) {
+    el.style.backgroundImage = updatedInline;
     return;
   }
 
-  let nextBg = inlineBg && inlineBg !== 'none' ? inlineBg : backgroundCandidates[0];
-
-  const getBaseHref = () => {
-    if (typeof document !== 'undefined' && document?.baseURI) {
-      return document.baseURI;
-    }
-    if (typeof location !== 'undefined' && location?.href) {
-      return location.href;
-    }
-    return 'http://localhost/';
-  };
-
-  const hasExplicitScheme = (value) => /^[a-zA-Z][\w+.-]*:/.test(value);
-
-  const resolveUrl = (value) => {
-    try {
-      return new URL(value, getBaseHref());
-    } catch (error) {
-      return null;
-    }
-  };
-
-  for (const url of urls) {
-    const resolved = resolveUrl(url);
-    const fallbackTarget = resolved?.href || url;
-    const isOriginalRelative = !hasExplicitScheme(url) && !url.startsWith('//');
-    const protocol = resolved?.protocol || '';
-    const isHttp = protocol === 'http:' || protocol === 'https:';
-    const canAttemptFetch = !isOriginalRelative && isHttp;
-
-    try {
-      let dataUri = null;
-
-      if (canAttemptFetch) {
-        try {
-          ({ dataUri } = await fetchAsDataURL(resolved.href));
-        } catch (error) {
-          // fall through to canvas fallback
-        }
-      }
-
-      if (!dataUri) {
-        ({ dataUri } = await imageSrcToCanvasDataURI(fallbackTarget));
-      }
-
-      nextBg = nextBg.split(url).join(dataUri);
-    } catch (error) {
-      warnings.push(`BG image inline failed: ${url} — ${error?.message || error}`);
-    }
+  const updatedComputed = rewrite(backgroundCandidates[0]);
+  if (updatedComputed && updatedComputed !== inlineBg) {
+    el.style.backgroundImage = updatedComputed;
   }
-  el.style.backgroundImage = nextBg;
 }
 
-function setExplicitDimensions(el) {
-  const rect = el.getBoundingClientRect();
-  const width = clampWidth(rect.width || Number(el.width) || EMAIL_MAX_WIDTH);
+function setExplicitDimensions(el, fallbackWidth, fallbackHeight) {
+  const rect = typeof el.getBoundingClientRect === 'function' ? el.getBoundingClientRect() : { width: 0, height: 0 };
+  const naturalWidth = Number(el.naturalWidth) || 0;
+  const naturalHeight = Number(el.naturalHeight) || 0;
+  const widthFallbacks = [fallbackWidth, rect.width, naturalWidth, Number(el.width), EMAIL_MAX_WIDTH];
+  const widthCandidate = widthFallbacks.find((value) => Number.isFinite(value) && value > 0);
+  const width = clampWidth(widthCandidate);
+
+  const heightFallbacks = [fallbackHeight, rect.height, naturalHeight, Number(el.height)];
+  let heightCandidate = heightFallbacks.find((value) => Number.isFinite(value) && value > 0) || 0;
+  if ((!heightCandidate || heightCandidate <= 0) && naturalWidth > 0 && naturalHeight > 0 && width > 0) {
+    heightCandidate = (naturalHeight / naturalWidth) * width;
+  }
+  if (!Number.isFinite(heightCandidate) || heightCandidate <= 0) {
+    heightCandidate = width;
+  }
+  const height = Math.max(1, Math.round(heightCandidate));
+
   el.width = width;
+  if (typeof el.setAttribute === 'function') {
+    el.setAttribute('width', String(width));
+  }
   el.style.width = `${width}px`;
+  el.height = height;
+  if (typeof el.setAttribute === 'function') {
+    el.setAttribute('height', String(height));
+    el.setAttribute('border', '0');
+  }
   el.style.height = 'auto';
   el.style.display = 'block';
+  el.style.border = '0';
+  if (!el.style.maxWidth) {
+    el.style.maxWidth = '100%';
+  }
 }
 
-async function inlineAllRasterImages(root, warnings) {
+async function canvasToPngBlob(canvas) {
+  if (typeof canvas.toBlob === 'function') {
+    return new Promise((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (blob) {
+          resolve(blob);
+        } else {
+          reject(new Error('Canvas toBlob() returned null'));
+        }
+      }, 'image/png', 1.0);
+    });
+  }
+  const dataUri = canvas.toDataURL('image/png', 1.0);
+  const commaIndex = dataUri.indexOf(',');
+  if (commaIndex === -1) {
+    throw new Error('Invalid canvas data URI');
+  }
+  const base64 = dataUri.slice(commaIndex + 1);
+  const mime = dataUri.slice(5, commaIndex).split(';')[0] || 'image/png';
+  const buffer = typeof Buffer !== 'undefined' ? Buffer.from(base64, 'base64') : Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  return new Blob([buffer], { type: mime });
+}
+
+function getUploadConfig(options = {}) {
+  const globalScope = (typeof globalThis !== 'undefined' && globalThis) || {};
+  const exportConfig = options;
+  const globalExport = globalScope.PropBuilderEmailExport || {};
+  const uploadCanvas = exportConfig.uploadCanvas
+    || globalExport.uploadCanvas
+    || globalExport.uploadCanvasImage
+    || globalExport.uploadImage;
+  const imageUploadEndpoint = exportConfig.imageUploadEndpoint
+    || exportConfig.uploadEndpoint
+    || globalExport.imageUploadEndpoint
+    || globalExport.uploadEndpoint;
+  const parseUploadResponse = exportConfig.parseUploadResponse || globalExport.parseUploadResponse;
+  return { uploadCanvas, imageUploadEndpoint, parseUploadResponse };
+}
+
+async function uploadCanvasImage(canvas, warnings, options = {}) {
+  const { uploadCanvas, imageUploadEndpoint, parseUploadResponse } = getUploadConfig(options);
+  const blob = await canvasToPngBlob(canvas);
+
+  if (typeof uploadCanvas === 'function') {
+    const result = await uploadCanvas({ canvas, blob });
+    const url = typeof result === 'string' ? result : result?.url || result?.href;
+    const httpsUrl = toAbsoluteHttpsUrl(url);
+    if (!httpsUrl) {
+      throw new Error('Canvas upload function did not return a valid HTTPS URL');
+    }
+    return httpsUrl;
+  }
+
+  if (!imageUploadEndpoint) {
+    throw new Error('No canvas upload endpoint configured');
+  }
+
+  const formData = new FormData();
+  formData.append('file', blob, 'canvas.png');
+  const resp = await fetch(imageUploadEndpoint, {
+    method: 'POST',
+    credentials: 'include',
+    body: formData,
+  }).catch((error) => {
+    throw new Error(`Upload failed: ${error?.message || error}`);
+  });
+
+  if (!resp || !resp.ok) {
+    throw new Error(`Upload failed with status ${resp?.status || 'unknown'}`);
+  }
+
+  let payload = null;
+  const contentType = resp.headers?.get?.('content-type') || '';
+  if (contentType.includes('application/json')) {
+    payload = await resp.json();
+  } else {
+    payload = await resp.text();
+  }
+
+  let extractedUrl = null;
+  if (typeof parseUploadResponse === 'function') {
+    extractedUrl = await parseUploadResponse(payload, resp);
+  } else if (payload && typeof payload === 'object') {
+    extractedUrl = payload.secureUrl || payload.secureURL || payload.url || payload.href;
+  } else if (typeof payload === 'string') {
+    extractedUrl = payload.trim();
+  }
+
+  const httpsUrl = toAbsoluteHttpsUrl(extractedUrl);
+  if (!httpsUrl) {
+    throw new Error('Upload response did not include a valid HTTPS URL');
+  }
+
+  return httpsUrl;
+}
+
+function ensureImageAttributes(image, fallbackWidth, fallbackHeight) {
+  if (typeof image.removeAttribute === 'function') {
+    image.removeAttribute('srcset');
+  }
+  const hasWidthHint = Number.isFinite(fallbackWidth) && fallbackWidth > 0;
+  const hasHeightHint = Number.isFinite(fallbackHeight) && fallbackHeight > 0;
+  if (hasWidthHint) {
+    image.__pbFallbackWidth = fallbackWidth;
+  }
+  if (hasHeightHint) {
+    image.__pbFallbackHeight = fallbackHeight;
+  }
+  const widthHint = Number.isFinite(image.__pbFallbackWidth) ? image.__pbFallbackWidth : undefined;
+  const heightHint = Number.isFinite(image.__pbFallbackHeight) ? image.__pbFallbackHeight : undefined;
+  setExplicitDimensions(image, widthHint, heightHint);
+}
+
+async function inlineAllRasterImages(root, warnings, options = {}) {
   const canvases = Array.from(root.querySelectorAll('canvas'));
   for (const canvas of canvases) {
-    const res = await canvasToDataImg(canvas, warnings);
     const img = document.createElement('img');
-    if (res) {
-      img.src = res.dataUri;
-    } else {
+    try {
+      const uploadedUrl = await uploadCanvasImage(canvas, warnings, options);
+      img.src = uploadedUrl;
+    } catch (error) {
+      warnings.push(`Canvas upload failed: ${error?.message || error}`);
       img.alt = 'Canvas unavailable';
     }
-    setExplicitDimensions(img);
+    ensureImageAttributes(img, canvas.width || canvas.clientWidth, canvas.height || canvas.clientHeight);
     canvas.replaceWith(img);
   }
 
   const images = Array.from(root.querySelectorAll('img'));
   for (const image of images) {
-    const res = await imgElementToDataURI(image, warnings);
-    if (res) {
-      image.src = res.dataUri;
-      if (image.srcset) {
-        image.removeAttribute('srcset');
+    const currentSrc = image.currentSrc || image.src;
+    if (currentSrc && !/^data:/i.test(currentSrc)) {
+      const absolute = toAbsoluteHttpsUrl(currentSrc, options?.baseHref || getBaseHref());
+      if (absolute) {
+        image.src = absolute;
       }
-      setExplicitDimensions(image);
-    } else {
-      setExplicitDimensions(image);
     }
+    ensureImageAttributes(image);
   }
 
   const elements = Array.from(root.querySelectorAll('*'));
   for (const element of elements) {
-    await inlineBackgroundImage(element, warnings);
+    await inlineBackgroundImage(element, warnings, options);
   }
 }
 
@@ -668,9 +794,11 @@ function buildOuterWrapper(content) {
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%; background-color:#FFFFFF;">
       <tr>
         <td align="center" style="padding:0;">
+          <!--[if mso]><table width="${DEFAULT_EMAIL_WIDTH}" align="center"><tr><td><![endif]-->
           <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="${DEFAULT_EMAIL_WIDTH}" style="width:${DEFAULT_EMAIL_WIDTH}px; max-width:100%;">
             ${content}
           </table>
+          <!--[if mso]></td></tr></table><![endif]-->
         </td>
       </tr>
     </table>`;
@@ -772,7 +900,21 @@ async function buildEmailExportHTML(proposal) {
   const wrapper = document.createElement('div');
   wrapper.innerHTML = wrapperMarkup;
 
-  await inlineAllRasterImages(wrapper, warnings);
+  const rasterOptions = {};
+  if (proposal?.imageUploadEndpoint) {
+    rasterOptions.imageUploadEndpoint = proposal.imageUploadEndpoint;
+  }
+  if (proposal?.uploadEndpoint && !rasterOptions.imageUploadEndpoint) {
+    rasterOptions.uploadEndpoint = proposal.uploadEndpoint;
+  }
+  if (typeof proposal?.uploadCanvas === 'function') {
+    rasterOptions.uploadCanvas = proposal.uploadCanvas;
+  }
+  if (proposal?.baseHref) {
+    rasterOptions.baseHref = proposal.baseHref;
+  }
+
+  await inlineAllRasterImages(wrapper, warnings, rasterOptions);
 
   const fontFamily = brand.fontFamily || FALLBACK_FONT_FAMILY;
   const emailBody = wrapper.innerHTML;
@@ -802,9 +944,329 @@ async function buildEmailExportHTML(proposal) {
   };
 }
 
+function getPreviewRoot(doc) {
+  if (!doc || typeof doc.querySelector !== 'function') {
+    return null;
+  }
+  return doc.getElementById('tab-preview') || doc;
+}
+
+function selectFirst(root, selectors) {
+  if (!root || typeof root.querySelector !== 'function') {
+    return null;
+  }
+  for (const selector of selectors) {
+    if (!selector) {
+      continue;
+    }
+    const found = root.querySelector(selector);
+    if (found) {
+      return found;
+    }
+  }
+  return null;
+}
+
+function normaliseInline(text) {
+  if (!text) {
+    return '';
+  }
+  return String(text)
+    .replace(/\u00A0/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normaliseMultiline(text) {
+  if (!text) {
+    return '';
+  }
+  return String(text)
+    .replace(/\u00A0/g, ' ')
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .join('\n');
+}
+
+function textFromElement(el, options = {}) {
+  if (!el) {
+    return '';
+  }
+  const { preserveLineBreaks = false } = options;
+  const raw = el.textContent || '';
+  return preserveLineBreaks ? normaliseMultiline(raw) : normaliseInline(raw);
+}
+
+function collectListItems(listEl) {
+  if (!listEl) {
+    return [];
+  }
+  return Array.from(listEl.querySelectorAll('li'))
+    .map((item) => normaliseInline(item.textContent || ''))
+    .filter((value) => value.length > 0);
+}
+
+function parsePx(value) {
+  if (value == null) {
+    return Number.NaN;
+  }
+  const match = String(value).match(/(-?\d+(?:\.\d+)?)/);
+  if (!match) {
+    return Number.NaN;
+  }
+  return Number.parseFloat(match[1]);
+}
+
+function collectFeaturesFromPreview(root) {
+  if (!root) {
+    return [];
+  }
+  const cards = Array.from(root.querySelectorAll('[data-export-feature="card"]'));
+  const features = [];
+  for (const card of cards) {
+    const context = card.getAttribute('data-export-feature-context');
+    if (context && context !== 'preview') {
+      continue;
+    }
+    const type = card.getAttribute('data-export-feature-type') || 'standard';
+    const titleEl = card.querySelector('[data-export-feature-title]');
+    const copyEl = card.querySelector('[data-export-feature-copy]');
+    const listEl = card.querySelector('[data-export-feature-list]');
+    const imageEl = card.querySelector('[data-export-feature-image]');
+    const title = textFromElement(titleEl);
+    const description = copyEl ? textFromElement(copyEl, { preserveLineBreaks: true }) : '';
+    const bullets = listEl ? collectListItems(listEl) : [];
+
+    let image = null;
+    if (imageEl && imageEl.src) {
+      const wrapper = imageEl.closest('.icon');
+      const width = wrapper ? parsePx(wrapper.style?.width) : Number.NaN;
+      const height = wrapper ? parsePx(wrapper.style?.height) : Number.NaN;
+      image = {
+        src: imageEl.src,
+        alt: imageEl.alt || title || 'Feature image',
+      };
+      if (Number.isFinite(width) && width > 0) {
+        image.width = Math.round(width);
+      }
+      if (Number.isFinite(height) && height > 0) {
+        image.height = Math.round(height);
+      }
+    }
+
+    if (!title && !description && !bullets.length && !image) {
+      continue;
+    }
+
+    features.push({
+      title,
+      description: bullets.length ? '' : description,
+      bullets,
+      image,
+      isHero: type === 'hero',
+    });
+  }
+  return features;
+}
+
+function collectKeyBenefitsFromPreview(root) {
+  const list = selectFirst(root, ['#keyBenefits', '#pvBenefits', '[data-export="key-benefits"]']);
+  return collectListItems(list);
+}
+
+function collectCommercialTermsFromPreview(root) {
+  const list = selectFirst(root, ['#termsDependencies', '#assumptions', '[data-export="terms-dependencies"]']);
+  const items = collectListItems(list);
+  return items.join('\n');
+}
+
+function collectPricingTableHTMLFromPreview(root, brand) {
+  const table = selectFirst(root, ['#pricingTable', '#priceTableView', '[data-export="pricing-table"]']);
+  if (!table) {
+    return '';
+  }
+  const headerCells = Array.from(table.querySelectorAll('thead th'));
+  const bodyRows = Array.from(table.querySelectorAll('tbody tr'));
+  const rows = [];
+  for (const row of bodyRows) {
+    const cells = Array.from(row.children || [])
+      .map((cell) => normaliseInline(cell.textContent || ''));
+    const hasData = cells.some((cell) => cell && cell.length > 0);
+    if (!hasData) {
+      continue;
+    }
+    rows.push(cells);
+  }
+  if (!rows.length) {
+    return '';
+  }
+  const fontFamily = brand?.fontFamily || FALLBACK_FONT_FAMILY;
+  const headingColor = brand?.colorHeading || '#0B1220';
+  const bodyColor = brand?.colorText || '#333333';
+  const headerHtml = headerCells
+    .map((cell) => `<th style="font-family:${esc(fontFamily)}; font-size:15px; font-weight:600; color:${esc(headingColor)}; background-color:rgba(0, 0, 0, 0.04); padding:12px 10px; text-align:left;">${esc(normaliseInline(cell.textContent || ''))}</th>`)
+    .join('');
+  const rowHtml = rows
+    .map((cells) => `<tr>${cells
+      .map((text) => {
+        const content = text ? esc(text) : '&nbsp;';
+        return `<td style="font-family:${esc(fontFamily)}; font-size:15px; line-height:1.55; color:${esc(bodyColor)}; padding:12px 10px; border-bottom:1px solid rgba(0, 0, 0, 0.08);">${content}</td>`;
+      })
+      .join('')}</tr>`)
+    .join('');
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%; border:1px solid rgba(0, 0, 0, 0.1); border-radius:16px; overflow:hidden;">`
+    + `<thead><tr>${headerHtml}</tr></thead>`
+    + `<tbody>${rowHtml}</tbody>`
+    + '</table>';
+}
+
+function collectPriceCardFromPreview(root, brand) {
+  const card = selectFirst(root, ['[data-export="price-card"]', '#priceCard']);
+  if (!card) {
+    return { show: false, html: '', shadedBgColor: brand?.priceCardShade || '#F3F4F9' };
+  }
+  const amountEl = selectFirst(card, ['[data-export="price-amount"]', '#pvMonthly']);
+  const termEl = selectFirst(card, ['[data-export="price-term"]', '#pvTerm2']);
+  const amountText = textFromElement(amountEl);
+  const termText = textFromElement(termEl);
+  if (!amountText && !termText) {
+    return { show: false, html: '', shadedBgColor: brand?.priceCardShade || '#F3F4F9' };
+  }
+  const fontFamily = brand?.fontFamily || FALLBACK_FONT_FAMILY;
+  const headingColor = brand?.colorHeading || '#0B1220';
+  const textColor = brand?.colorText || '#333333';
+  const mutedColor = brand?.colorMuted || '#6B6F76';
+  const parts = [`<div style="font-family:${esc(fontFamily)}; font-size:14px; font-weight:600; color:${esc(mutedColor)};">Monthly investment</div>`];
+  if (amountText) {
+    parts.push(`<div style="font-family:${esc(fontFamily)}; font-size:30px; font-weight:700; color:${esc(headingColor)}; margin-top:6px;">${esc(amountText)}</div>`);
+  }
+  if (termText) {
+    parts.push(`<div style="font-family:${esc(fontFamily)}; font-size:14px; color:${esc(textColor)}; margin-top:8px;">${esc(termText)}</div>`);
+  }
+
+  let shadedBgColor = brand?.priceCardShade || '#F3F4F9';
+  if (typeof window !== 'undefined' && typeof window.getComputedStyle === 'function') {
+    try {
+      const styles = window.getComputedStyle(card);
+      if (styles && styles.backgroundColor && styles.backgroundColor !== 'rgba(0, 0, 0, 0)') {
+        shadedBgColor = styles.backgroundColor;
+      }
+    } catch (error) {
+      // ignore computed style errors
+    }
+  }
+
+  return {
+    show: parts.length > 0,
+    html: parts.join(''),
+    shadedBgColor,
+  };
+}
+
+function collectBrandFromPreview(root) {
+  const fallback = normalizeBrand(null);
+  if (!root) {
+    return fallback;
+  }
+  if (typeof window === 'undefined' || typeof window.getComputedStyle !== 'function') {
+    return fallback;
+  }
+  const headlineEl = selectFirst(root, ['#mainHeadline', '#pvHero', '[data-export="headline-main"]']);
+  const bodyEl = selectFirst(root, ['#executiveSummary', '#pvSummary', '[data-export="exec-summary"]']);
+  const mutedEl = selectFirst(root, ['#proposalRef', '#pvRef', '[data-export="ref"]', '[data-export="price-term"]']);
+  const fontEl = headlineEl || bodyEl || root;
+  const styles = (element) => {
+    try {
+      return window.getComputedStyle(element);
+    } catch (error) {
+      return null;
+    }
+  };
+  const fontStyles = styles(fontEl);
+  const headingStyles = headlineEl ? styles(headlineEl) : null;
+  const bodyStyles = bodyEl ? styles(bodyEl) : null;
+  const mutedStyles = mutedEl ? styles(mutedEl) : null;
+  return normalizeBrand({
+    fontFamily: fontStyles?.fontFamily || fallback.fontFamily,
+    colorHeading: headingStyles?.color || fallback.colorHeading,
+    colorText: bodyStyles?.color || fallback.colorText,
+    colorMuted: mutedStyles?.color || fallback.colorMuted,
+    priceCardShade: fallback.priceCardShade,
+  });
+}
+
+function capturePreviewBanner(doc) {
+  if (!doc) {
+    return null;
+  }
+  const canvas = typeof doc.getElementById === 'function' ? doc.getElementById('banner') : null;
+  if (canvas && typeof canvas.toDataURL === 'function') {
+    try {
+      const dataUri = canvas.toDataURL('image/png', 1.0);
+      if (dataUri && dataUri.startsWith('data:image/')) {
+        return dataUri;
+      }
+    } catch (error) {
+      // ignore canvas failures and fall back
+    }
+  }
+  const img = selectFirst(doc, ['[data-export="banner-image"]', '#pageBanner', '#pageBanner2']);
+  if (img && img.src) {
+    return {
+      src: img.src,
+      alt: img.alt || 'Proposal banner',
+    };
+  }
+  return null;
+}
+
+function collectPreviewProposal(doc) {
+  const root = getPreviewRoot(doc);
+  const brand = collectBrandFromPreview(root);
+  const customerEl = selectFirst(root, ['#customerName', '#pvCustomer', '[data-export="customer"]']);
+  const refEl = selectFirst(root, ['#proposalRef', '#pvRef', '[data-export="ref"]']);
+  const headlineEl = selectFirst(root, ['#mainHeadline', '#pvHero', '[data-export="headline-main"]']);
+  const subHeadlineEl = selectFirst(root, ['#subHeadline', '#pvSub', '[data-export="headline-sub"]']);
+  const summaryEl = selectFirst(root, ['#executiveSummary', '#pvSummary', '[data-export="exec-summary"]']);
+
+  let customer = textFromElement(customerEl);
+  if (customer && customer.replace(/\s+/g, ' ').trim().toLowerCase() === 'customer') {
+    customer = '';
+  }
+  const refText = textFromElement(refEl);
+  const normalizedRef = refText ? refText.replace(/^ref:\s*/i, '').trim() : '';
+
+  return {
+    banner: capturePreviewBanner(doc),
+    brand,
+    customer,
+    ref: normalizedRef,
+    headlineMain: textFromElement(headlineEl),
+    headlineSub: textFromElement(subHeadlineEl),
+    executiveSummary: textFromElement(summaryEl, { preserveLineBreaks: true }),
+    keyBenefits: collectKeyBenefitsFromPreview(root),
+    features: collectFeaturesFromPreview(root),
+    pricingTableHTML: collectPricingTableHTMLFromPreview(root, brand),
+    priceCard: collectPriceCardFromPreview(root, brand),
+    commercialTerms: collectCommercialTermsFromPreview(root),
+  };
+}
+
+async function generateEmailExport(rootDocument) {
+  const doc = rootDocument || (typeof document !== 'undefined' ? document : null);
+  if (!doc) {
+    throw new Error('A document is required to generate the email export');
+  }
+  const proposal = collectPreviewProposal(doc);
+  const result = await buildEmailExportHTML(proposal);
+  return { html: result?.html || '' };
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
-    buildEmailExportHTML,
+    generateEmailExport,
     // exporting helpers for potential testing
     __private: {
       sanitizeHTML,
@@ -813,11 +1275,12 @@ if (typeof module !== 'undefined' && module.exports) {
       inlineAllRasterImages,
       imgElementToDataURI,
       inlineBackgroundImage,
+      buildEmailExportHTML,
     },
   };
 }
 
 if (typeof window !== 'undefined') {
   window.PropBuilderEmailExport = window.PropBuilderEmailExport || {};
-  window.PropBuilderEmailExport.buildEmailExportHTML = buildEmailExportHTML;
+  window.PropBuilderEmailExport.generateEmailExport = generateEmailExport;
 }
