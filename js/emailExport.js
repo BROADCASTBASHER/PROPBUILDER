@@ -1,4 +1,4 @@
-const EMAIL_MAX_WIDTH = 680;
+const EMAIL_MAX_WIDTH = 600;
 const DEFAULT_EMAIL_WIDTH = EMAIL_MAX_WIDTH;
 const DEFAULT_IMAGE_WIDTH = 320;
 const DEFAULT_IMAGE_HEIGHT = 180;
@@ -580,9 +580,11 @@ function buildOuterWrapper(content) {
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%; background-color:#FFFFFF;">
       <tr>
         <td align="center" style="padding:0;">
+          <!--[if mso]><table width="${DEFAULT_EMAIL_WIDTH}" align="center"><tr><td><![endif]-->
           <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="${DEFAULT_EMAIL_WIDTH}" style="width:${DEFAULT_EMAIL_WIDTH}px; max-width:100%;">
             ${content}
           </table>
+          <!--[if mso]></td></tr></table><![endif]-->
         </td>
       </tr>
     </table>`;
