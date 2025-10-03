@@ -448,22 +448,30 @@ async function renderFeatureCard(feature, brand, warnings) {
     if ((image.kind === 'css-bg' || image.background === true) && (image.css || image.src)) {
       const width = clampWidth(image.width ?? DEFAULT_IMAGE_WIDTH);
       const height = Math.max(32, Math.round(image.height ?? DEFAULT_IMAGE_HEIGHT));
-      const styleParts = [
-        `width:${width}px`,
-        `height:${height}px`,
-        'background-repeat:no-repeat',
-        'background-size:cover',
-        'background-position:center',
-        'border-radius:12px'
-      ];
-      if (image.src) {
-        styleParts.push(`background-image:url('${esc(image.src)}')`);
+      let imgSrc = image.src || '';
+      if (!imgSrc && image.css) {
+        const match = image.css.match(/background-image\s*:\s*url\((['"]?)([^'")]+)\1\)/i);
+        if (match && match[2]) {
+          imgSrc = match[2];
+        }
       }
+      const altText = image.alt || feature.title || 'Feature image';
+      const styleParts = [
+        'display:block',
+        `width:${width}px`,
+        'max-width:100%',
+        `height:${height}px`,
+        'object-fit:cover',
+        'border:0',
+        'outline:none',
+        'text-decoration:none',
+        'border-radius:12px',
+      ];
       if (image.css) {
         styleParts.push(image.css.trim().replace(/;+$/g, ''));
       }
       const styleAttr = `${styleParts.join('; ')};`;
-      rows.push(`<tr><td style="padding-bottom:12px;"><div style="${styleAttr}"></div></td></tr>`);
+      rows.push(`<tr><td style="padding-bottom:12px;"><img src="${esc(imgSrc)}" alt="${esc(altText)}" width="${width}" height="${height}" style="${styleAttr}"></td></tr>`);
     } else if (image.src) {
       const width = clampWidth(image.width ?? DEFAULT_IMAGE_WIDTH);
       const altText = image.alt || feature.title || 'Feature image';

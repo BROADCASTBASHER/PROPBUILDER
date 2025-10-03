@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 
 const {
-  __private: { inlineAllRasterImages, inlineBackgroundImage },
+  __private: { inlineAllRasterImages, inlineBackgroundImage, renderFeatureCard },
 } = require('../js/emailExport.js');
 
 const createStyle = () => ({
@@ -203,4 +203,27 @@ test('inlineAllRasterImages keeps HTTPS and uploads canvases', async () => {
       global.getComputedStyle = originalGetComputedStyle;
     }
   }
+});
+
+test('renderFeatureCard uses <img> for background images', async () => {
+  const feature = {
+    title: 'Background Feature',
+    image: {
+      background: true,
+      src: 'https://cdn.example.com/background.png',
+      width: 400,
+      height: 220,
+      css: 'border-radius:20px; box-shadow:0 0 10px rgba(0,0,0,0.2);',
+      alt: 'Background graphic',
+    },
+  };
+
+  const html = await renderFeatureCard(feature, null, []);
+
+  assert.ok(html.includes('<img'));
+  assert.ok(html.includes('src="https://cdn.example.com/background.png"'));
+  assert.ok(html.includes('height="220"'));
+  assert.ok(html.includes('object-fit:cover'));
+  assert.ok(html.includes('box-shadow:0 0 10px rgba(0,0,0,0.2)'));
+  assert.ok(!html.includes('background-image'));
 });
