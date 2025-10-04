@@ -4,5 +4,8 @@
   "private": true,
   "scripts": {
     "test": "node --test"
+  },
+  "devDependencies": {
+    "jsdom": "^23.2.0"
   }
 }
