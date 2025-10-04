@@ -3,6 +3,31 @@ const DEFAULT_EMAIL_WIDTH = EMAIL_MAX_WIDTH;
 const DEFAULT_IMAGE_WIDTH = 320;
 const DEFAULT_IMAGE_HEIGHT = 180;
 const FALLBACK_FONT_FAMILY = '-apple-system, Segoe UI, Roboto, Arial, sans-serif';
+const EMAIL_BODY_BACKGROUND = '#FAF7F3';
+const EMAIL_BODY_TEXT_COLOR = '#0B1220';
+const EMAIL_BODY_FONT_STACK = "'TelstraText', Arial, sans-serif";
+
+const INLINE_STYLE_PROPERTIES = [
+  'align-content', 'align-items', 'align-self', 'background', 'background-attachment', 'background-blend-mode',
+  'background-clip', 'background-color', 'background-image', 'background-origin', 'background-position',
+  'background-repeat', 'background-size', 'border', 'border-block', 'border-block-color', 'border-block-style',
+  'border-block-width', 'border-bottom', 'border-bottom-color', 'border-bottom-left-radius', 'border-bottom-right-radius',
+  'border-bottom-style', 'border-bottom-width', 'border-collapse', 'border-color', 'border-image', 'border-left',
+  'border-left-color', 'border-left-style', 'border-left-width', 'border-radius', 'border-right', 'border-right-color',
+  'border-right-style', 'border-right-width', 'border-spacing', 'border-style', 'border-top', 'border-top-color',
+  'border-top-left-radius', 'border-top-right-radius', 'border-top-style', 'border-top-width', 'border-width', 'bottom',
+  'box-shadow', 'box-sizing', 'color', 'column-gap', 'display', 'filter', 'flex', 'flex-basis', 'flex-direction',
+  'flex-grow', 'flex-shrink', 'flex-wrap', 'font', 'font-family', 'font-size', 'font-style', 'font-variant',
+  'font-variant-numeric', 'font-weight', 'gap', 'grid-auto-flow', 'grid-template-columns', 'grid-template-rows', 'height',
+  'justify-content', 'justify-items', 'justify-self', 'left', 'letter-spacing', 'line-height', 'list-style',
+  'list-style-image', 'list-style-position', 'list-style-type', 'margin', 'margin-block', 'margin-bottom', 'margin-left',
+  'margin-right', 'margin-top', 'max-height', 'max-width', 'min-height', 'min-width', 'object-fit', 'opacity', 'order',
+  'outline', 'outline-color', 'outline-style', 'outline-width', 'overflow', 'overflow-x', 'overflow-y', 'padding',
+  'padding-block', 'padding-bottom', 'padding-left', 'padding-right', 'padding-top', 'position', 'right', 'row-gap',
+  'text-align', 'text-decoration', 'text-decoration-color', 'text-decoration-line', 'text-decoration-style', 'text-indent',
+  'text-shadow', 'text-transform', 'top', 'transform', 'transition', 'vertical-align', 'white-space', 'width', 'word-break',
+  'word-spacing', 'word-wrap', 'z-index',
+];
 
 const SCRIPT_TAG_REGEX = /<script[\s\S]*?>[\s\S]*?<\/script>/gi;
 const STYLE_TAG_REGEX = /<style[\s\S]*?>[\s\S]*?<\/style>/gi;
@@ -1262,6 +1287,522 @@ function collectPreviewProposal(doc) {
   };
 }
 
+function toStyleMap(styleText) {
+  const map = new Map();
+  if (!styleText) {
+    return map;
+  }
+  String(styleText)
+    .split(';')
+    .map((chunk) => chunk.trim())
+    .filter((chunk) => chunk.length > 0)
+    .forEach((chunk) => {
+      const parts = chunk.split(':');
+      if (!parts.length) {
+        return;
+      }
+      const prop = parts.shift();
+      if (!prop) {
+        return;
+      }
+      const value = parts.join(':').trim();
+      if (!value) {
+        return;
+      }
+      map.set(prop.trim().toLowerCase(), value);
+    });
+  return map;
+}
+
+function styleMapToString(map) {
+  return Array.from(map.entries())
+    .map(([prop, value]) => `${prop}:${value}`)
+    .join('; ');
+}
+
+function mergeStyleDeclarations(element, declarations) {
+  if (!element || !declarations) {
+    return;
+  }
+  const map = toStyleMap(element.getAttribute && element.getAttribute('style'));
+  Object.entries(declarations).forEach(([prop, value]) => {
+    if (value == null || value === '') {
+      return;
+    }
+    map.set(prop.trim().toLowerCase(), value);
+  });
+  if (map.size) {
+    element.setAttribute('style', styleMapToString(map));
+  }
+}
+
+function inlineComputedStylesForElement(source, target, doc) {
+  if (!source || !target) {
+    return;
+  }
+  const view = (doc && doc.defaultView) || (typeof window !== 'undefined' ? window : null);
+  if (!view || typeof view.getComputedStyle !== 'function') {
+    return;
+  }
+  let computed;
+  try {
+    computed = view.getComputedStyle(source);
+  } catch (error) {
+    computed = null;
+  }
+  if (!computed) {
+    return;
+  }
+  const map = toStyleMap(target.getAttribute && target.getAttribute('style'));
+  INLINE_STYLE_PROPERTIES.forEach((prop) => {
+    const value = computed.getPropertyValue(prop);
+    if (!value) {
+      return;
+    }
+    map.set(prop.toLowerCase(), value);
+  });
+  if (map.has('font-family')) {
+    const fontValue = map.get('font-family');
+    if (fontValue && !/sans-serif/i.test(fontValue)) {
+      map.set('font-family', `${fontValue}, Arial, sans-serif`);
+    }
+  }
+  target.setAttribute('style', styleMapToString(map));
+}
+
+function inlineComputedStylesTree(sourceRoot, targetRoot, doc) {
+  if (!sourceRoot || !targetRoot) {
+    return;
+  }
+  inlineComputedStylesForElement(sourceRoot, targetRoot, doc);
+  if (!sourceRoot.children || !targetRoot.children) {
+    return;
+  }
+  const len = Math.min(sourceRoot.children.length, targetRoot.children.length);
+  for (let index = 0; index < len; index += 1) {
+    inlineComputedStylesTree(sourceRoot.children[index], targetRoot.children[index], doc);
+  }
+}
+
+function ensureEmailImageSizing(original, clone) {
+  if (!clone || clone.tagName !== 'IMG') {
+    return;
+  }
+  const rect = original && typeof original.getBoundingClientRect === 'function'
+    ? original.getBoundingClientRect()
+    : null;
+  const widthCandidates = [
+    rect?.width,
+    Number(original?.width),
+    Number(original?.naturalWidth),
+    DEFAULT_IMAGE_WIDTH,
+  ].filter((value) => Number.isFinite(value) && value > 0);
+  let width = widthCandidates.length ? widthCandidates[0] : DEFAULT_IMAGE_WIDTH;
+  width = clampWidth(width);
+  if (width <= 0) {
+    width = DEFAULT_IMAGE_WIDTH;
+  }
+  clone.setAttribute('width', String(Math.round(width)));
+  if (typeof clone.removeAttribute === 'function') {
+    clone.removeAttribute('height');
+  }
+  mergeStyleDeclarations(clone, {
+    width: `${Math.round(width)}px`,
+    height: 'auto',
+    'max-width': '100%',
+    display: 'block',
+    border: '0',
+    outline: 'none',
+    'text-decoration': 'none',
+  });
+}
+
+function dataUriToBinary(dataUri, mimeFallback = MIME_FALLBACK) {
+  if (!dataUri || typeof dataUri !== 'string') {
+    return null;
+  }
+  const match = dataUri.match(/^data:([^;]+);base64,(.*)$/);
+  if (!match) {
+    return null;
+  }
+  const mime = match[1] || mimeFallback || MIME_FALLBACK;
+  const base64 = match[2] || '';
+  try {
+    if (typeof Buffer !== 'undefined') {
+      const buffer = Buffer.from(base64, 'base64');
+      return { mime, content: new Uint8Array(buffer) };
+    }
+    const binary = typeof atob === 'function' ? atob(base64) : null;
+    if (!binary) {
+      return null;
+    }
+    const len = binary.length;
+    const array = new Uint8Array(len);
+    for (let index = 0; index < len; index += 1) {
+      array[index] = binary.charCodeAt(index);
+    }
+    return { mime, content: array };
+  } catch (error) {
+    return null;
+  }
+}
+
+function guessAttachmentFilename(src, index, mime) {
+  const fallbackExt = {
+    'image/png': 'png',
+    'image/jpeg': 'jpg',
+    'image/jpg': 'jpg',
+    'image/gif': 'gif',
+    'image/webp': 'webp',
+    'image/svg+xml': 'svg',
+    'image/avif': 'avif',
+  };
+  let extension = fallbackExt[mime] || 'bin';
+  let baseName = '';
+  if (src) {
+    const cleaned = String(src).split('?')[0].split('#')[0];
+    const segments = cleaned.split('/');
+    const last = segments.pop() || '';
+    if (last && last.includes('.')) {
+      const parts = last.split('.');
+      const extCandidate = parts.pop();
+      if (extCandidate) {
+        extension = extCandidate.toLowerCase();
+      }
+      baseName = parts.join('.') || '';
+    } else if (last) {
+      baseName = last;
+    }
+  }
+  if (!baseName) {
+    baseName = 'preview-image';
+  }
+  baseName = baseName.replace(/[^a-z0-9_-]+/gi, '') || 'preview-image';
+  return `${baseName}-${index}.${extension}`;
+}
+
+async function collectCidImagesFromPreview(sourceRoot, cloneRoot, warnings) {
+  const attachments = [];
+  if (!sourceRoot || !cloneRoot) {
+    return attachments;
+  }
+  const sourceImages = Array.from(sourceRoot.querySelectorAll('img'));
+  const cloneImages = Array.from(cloneRoot.querySelectorAll('img'));
+  const len = Math.min(sourceImages.length, cloneImages.length);
+  for (let index = 0; index < len; index += 1) {
+    const original = sourceImages[index];
+    const clone = cloneImages[index];
+    const src = original?.currentSrc || original?.src || '';
+    if (!src) {
+      continue;
+    }
+    const data = await imgElementToDataURI(original, warnings);
+    if (!data || !data.dataUri) {
+      continue;
+    }
+    const binary = dataUriToBinary(data.dataUri, data.mime);
+    if (!binary) {
+      continue;
+    }
+    const cid = `img${index + 1}-${Date.now().toString(36)}${Math.random().toString(36).slice(2)}@tbtc-vic-east`;
+    clone.setAttribute('src', `cid:${cid}`);
+    if (typeof clone.removeAttribute === 'function') {
+      clone.removeAttribute('srcset');
+    }
+    ensureEmailImageSizing(original, clone);
+    attachments.push({
+      cid,
+      mime: binary.mime,
+      filename: guessAttachmentFilename(src, index + 1, binary.mime),
+      content: binary.content,
+    });
+  }
+  return attachments;
+}
+
+function ensureCommercialTermsSpacing(root) {
+  if (!root || typeof root.querySelector !== 'function') {
+    return;
+  }
+  const list = root.querySelector('[data-export="terms-dependencies"]');
+  if (!list) {
+    return;
+  }
+  mergeStyleDeclarations(list, {
+    'list-style-type': 'disc',
+    'margin': '6px 0 0 18px',
+    'padding-left': '18px',
+  });
+  const items = Array.from(list.querySelectorAll('li'));
+  items.forEach((item) => {
+    mergeStyleDeclarations(item, {
+      display: 'list-item',
+      'margin-bottom': '6px',
+    });
+  });
+}
+
+function buildPreviewHtmlDocument(doc, clone, proposal) {
+  const title = esc(proposal?.headlineMain || 'TBTC VIC EAST Proposal');
+  const wrapper = doc && typeof doc.createElement === 'function' ? doc.createElement('div') : null;
+  if (wrapper) {
+    wrapper.appendChild(clone.cloneNode(true));
+  }
+  const previewHtml = wrapper ? wrapper.innerHTML : clone.outerHTML;
+  const htmlLines = [
+    '<!DOCTYPE html>',
+    '<html lang="en">',
+    '<head>',
+    '  <meta charset="utf-8">',
+    '  <meta name="viewport" content="width=device-width,initial-scale=1">',
+    `  <title>${title}</title>`,
+    '</head>',
+    `  <body style="margin:0; padding:32px; background-color:${esc(EMAIL_BODY_BACKGROUND)}; color:${esc(EMAIL_BODY_TEXT_COLOR)}; font-family:${esc(EMAIL_BODY_FONT_STACK)};">`,
+    '    <div style="width:100%; display:flex; justify-content:center;">',
+    `      ${previewHtml}`,
+    '    </div>',
+    '  </body>',
+    '</html>',
+  ];
+  return htmlLines.join('\n');
+}
+
+function toUtf8Bytes(input) {
+  const text = input == null ? '' : String(input);
+  if (typeof TextEncoder !== 'undefined') {
+    return new TextEncoder().encode(text);
+  }
+  if (typeof Buffer !== 'undefined') {
+    const buffer = Buffer.from(text, 'utf8');
+    return new Uint8Array(buffer);
+  }
+  const utf8 = unescape(encodeURIComponent(text));
+  const array = new Uint8Array(utf8.length);
+  for (let index = 0; index < utf8.length; index += 1) {
+    array[index] = utf8.charCodeAt(index);
+  }
+  return array;
+}
+
+function encodeQuotedPrintable(input) {
+  const bytes = toUtf8Bytes(input);
+  const hex = '0123456789ABCDEF';
+  let line = '';
+  let output = '';
+  for (let index = 0; index < bytes.length; index += 1) {
+    const byte = bytes[index];
+    if (byte === 0x0D && bytes[index + 1] === 0x0A) {
+      output += line + '\r\n';
+      line = '';
+      index += 1;
+      continue;
+    }
+    if (byte === 0x0A) {
+      output += line + '\r\n';
+      line = '';
+      continue;
+    }
+    let chunk;
+    if ((byte >= 33 && byte <= 60) || (byte >= 62 && byte <= 126)) {
+      chunk = String.fromCharCode(byte);
+    } else if (byte === 0x09 || byte === 0x20) {
+      const nextByte = bytes[index + 1];
+      if (index === bytes.length - 1 || nextByte === 0x0D || nextByte === 0x0A) {
+        chunk = `=${hex[(byte >> 4) & 0x0F]}${hex[byte & 0x0F]}`;
+      } else {
+        chunk = String.fromCharCode(byte);
+      }
+    } else {
+      chunk = `=${hex[(byte >> 4) & 0x0F]}${hex[byte & 0x0F]}`;
+    }
+    if (line.length + chunk.length > 75) {
+      output += `${line}=\r\n`;
+      line = '';
+    }
+    line += chunk;
+  }
+  if (line.length) {
+    output += line;
+  }
+  return output;
+}
+
+function encodeBase64(uint8) {
+  if (!uint8 || !uint8.length) {
+    return '';
+  }
+  if (typeof Buffer !== 'undefined') {
+    return Buffer.from(uint8).toString('base64');
+  }
+  let binary = '';
+  const chunk = 0x8000;
+  for (let index = 0; index < uint8.length; index += chunk) {
+    const slice = uint8.subarray(index, index + chunk);
+    binary += String.fromCharCode.apply(null, slice);
+  }
+  return typeof btoa === 'function' ? btoa(binary) : '';
+}
+
+function chunkBase64(uint8) {
+  const base64 = encodeBase64(uint8);
+  if (!base64) {
+    return '';
+  }
+  const lines = [];
+  for (let index = 0; index < base64.length; index += 76) {
+    lines.push(base64.slice(index, index + 76));
+  }
+  return lines.join('\r\n');
+}
+
+function createBoundary(prefix = 'boundary') {
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function sanitizeHeaderValue(value) {
+  return String(value ?? '')
+    .replace(/\r|\n/g, ' ')
+    .replace(/[^\x20-\x7E]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function buildTextFallbackFromProposal(proposal) {
+  const lines = [];
+  lines.push('TBTC VIC EAST Proposal');
+  if (proposal?.customer) {
+    lines.push(`Customer: ${proposal.customer}`);
+  }
+  if (proposal?.ref) {
+    lines.push(`Reference: ${proposal.ref}`);
+  }
+  if (proposal?.headlineMain) {
+    lines.push(`Headline: ${proposal.headlineMain}`);
+  }
+  if (proposal?.headlineSub) {
+    lines.push(`Subheadline: ${proposal.headlineSub}`);
+  }
+  if (proposal?.executiveSummary) {
+    lines.push('', proposal.executiveSummary);
+  }
+  if (Array.isArray(proposal?.keyBenefits) && proposal.keyBenefits.length) {
+    lines.push('', 'Key benefits:');
+    proposal.keyBenefits.forEach((item) => {
+      lines.push(`- ${item}`);
+    });
+  }
+  const terms = String(proposal?.commercialTerms || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  if (terms.length) {
+    lines.push('', 'Commercial terms & dependencies:');
+    terms.forEach((term) => {
+      lines.push(`- ${term}`);
+    });
+  }
+  return lines.join('\r\n');
+}
+
+function buildEmailMetadata(proposal) {
+  const now = new Date();
+  const baseSubject = proposal?.customer
+    ? `TBTC VIC EAST Proposal - ${proposal.customer}`
+    : (proposal?.headlineMain ? `TBTC VIC EAST Proposal - ${proposal.headlineMain}` : 'TBTC VIC EAST Proposal');
+  const subject = sanitizeHeaderValue(baseSubject);
+  const toName = proposal?.customer ? sanitizeHeaderValue(proposal.customer) : 'Customer';
+  const headers = {
+    subject,
+    from: 'TBTC VIC East <hello@tbtc-vic-east.com.au>',
+    to: `${toName} <customer@example.com>`,
+    date: now.toUTCString(),
+    messageId: `<${Date.now().toString(36)}.${Math.random().toString(36).slice(2)}@tbtc-vic-east.local>`,
+  };
+  return {
+    subject: sanitizeHeaderValue(headers.subject),
+    from: sanitizeHeaderValue(headers.from),
+    to: sanitizeHeaderValue(headers.to),
+    date: sanitizeHeaderValue(headers.date),
+    messageId: sanitizeHeaderValue(headers.messageId),
+  };
+}
+
+function composeEmlMessage(metadata, html, text, attachments) {
+  const relatedBoundary = createBoundary('rel');
+  const alternativeBoundary = createBoundary('alt');
+  const htmlPart = encodeQuotedPrintable(html || '');
+  const textPart = encodeQuotedPrintable(text || '');
+  const lines = [];
+  lines.push(`From: ${metadata.from}`);
+  lines.push(`To: ${metadata.to}`);
+  lines.push(`Subject: ${metadata.subject}`);
+  lines.push(`Date: ${metadata.date}`);
+  lines.push(`Message-ID: ${metadata.messageId}`);
+  lines.push('MIME-Version: 1.0');
+  lines.push(`Content-Type: multipart/related; type="multipart/alternative"; boundary="${relatedBoundary}"`);
+  lines.push('');
+  lines.push(`--${relatedBoundary}`);
+  lines.push(`Content-Type: multipart/alternative; boundary="${alternativeBoundary}"`);
+  lines.push('');
+  lines.push(`--${alternativeBoundary}`);
+  lines.push('Content-Type: text/plain; charset="utf-8"');
+  lines.push('Content-Transfer-Encoding: quoted-printable');
+  lines.push('');
+  lines.push(textPart);
+  lines.push('');
+  lines.push(`--${alternativeBoundary}`);
+  lines.push('Content-Type: text/html; charset="utf-8"');
+  lines.push('Content-Transfer-Encoding: quoted-printable');
+  lines.push('');
+  lines.push(htmlPart);
+  lines.push('');
+  lines.push(`--${alternativeBoundary}--`);
+  lines.push('');
+  (attachments || []).forEach((attachment) => {
+    lines.push(`--${relatedBoundary}`);
+    lines.push(`Content-Type: ${attachment.mime}; name="${attachment.filename}"`);
+    lines.push('Content-Transfer-Encoding: base64');
+    lines.push(`Content-ID: <${attachment.cid}>`);
+    lines.push(`Content-Disposition: inline; filename="${attachment.filename}"`);
+    lines.push('');
+    lines.push(chunkBase64(attachment.content));
+    lines.push('');
+  });
+  lines.push(`--${relatedBoundary}--`);
+  lines.push('');
+  return lines.join('\r\n');
+}
+
+async function generatePreviewEmailPackage(doc) {
+  if (!doc || typeof doc.getElementById !== 'function') {
+    throw new Error('A document is required to generate the preview email package');
+  }
+  const preview = doc.getElementById('preview-export');
+  if (!preview) {
+    throw new Error('Preview export container (#preview-export) not found');
+  }
+  const clone = preview.cloneNode(true);
+  const warnings = [];
+  inlineComputedStylesTree(preview, clone, doc);
+  ensureCommercialTermsSpacing(clone);
+  const attachments = await collectCidImagesFromPreview(preview, clone, warnings);
+  const proposal = collectPreviewProposal(doc);
+  const html = buildPreviewHtmlDocument(doc, clone, proposal);
+  const text = buildTextFallbackFromProposal(proposal);
+  return { html, text, attachments, proposal, warnings };
+}
+
+async function generatePreviewEmailEml(rootDocument) {
+  const doc = rootDocument || (typeof document !== 'undefined' ? document : null);
+  if (!doc) {
+    throw new Error('A document is required to generate the preview email');
+  }
+  const { html, text, attachments, proposal, warnings } = await generatePreviewEmailPackage(doc);
+  const metadata = buildEmailMetadata(proposal);
+  const eml = composeEmlMessage(metadata, html, text, attachments);
+  return { eml, html, text, attachments, proposal, headers: metadata, warnings };
+}
+
 async function generateEmailExport(rootDocument) {
   const doc = rootDocument || (typeof document !== 'undefined' ? document : null);
   if (!doc) {
@@ -1275,6 +1816,8 @@ async function generateEmailExport(rootDocument) {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     generateEmailExport,
+    generatePreviewEmailPackage,
+    generatePreviewEmailEml,
     // exporting helpers for potential testing
     __private: {
       sanitizeHTML,
@@ -1284,6 +1827,15 @@ if (typeof module !== 'undefined' && module.exports) {
       imgElementToDataURI,
       inlineBackgroundImage,
       buildEmailExportHTML,
+      inlineComputedStylesTree,
+      encodeQuotedPrintable,
+      chunkBase64,
+      composeEmlMessage,
+      dataUriToBinary,
+      buildPreviewHtmlDocument,
+      buildTextFallbackFromProposal,
+      buildEmailMetadata,
+      generatePreviewEmailPackage,
     },
   };
 }
@@ -1291,4 +1843,5 @@ if (typeof module !== 'undefined' && module.exports) {
 if (typeof window !== 'undefined') {
   window.PropBuilderEmailExport = window.PropBuilderEmailExport || {};
   window.PropBuilderEmailExport.generateEmailExport = generateEmailExport;
+  window.PropBuilderEmailExport.generatePreviewEmailEml = generatePreviewEmailEml;
 }
