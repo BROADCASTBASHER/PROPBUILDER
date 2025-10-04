@@ -9,6 +9,7 @@ const {
   chunkBase64,
   dataUriToBinary,
   inlineAllRasterImages,
+  inlineBackgroundImage,
 } = require('../js/emailExport.js').__private;
 
 test('encodeQuotedPrintable handles trailing spaces and equals signs', () => {
@@ -119,6 +120,42 @@ test('inlineAllRasterImages uses same-origin credentials and inlines images', as
     global.navigator = previousGlobals.navigator;
     global.getComputedStyle = previousGlobals.getComputedStyle;
     global.fetch = previousGlobals.fetch;
+  }
+});
+
+test('inlineBackgroundImage normalises uppercase URL references', async () => {
+  const dom = new JSDOM(`<!doctype html><body><div id="target"></div></body>`, {
+    url: 'https://example.com/base/',
+  });
+
+  const previousGlobals = {
+    window: global.window,
+    document: global.document,
+    getComputedStyle: global.getComputedStyle,
+  };
+
+  try {
+    global.window = dom.window;
+    global.document = dom.window.document;
+    global.getComputedStyle = () => ({
+      backgroundImage: 'URL("/images/HERO.PNG")',
+    });
+
+    const element = dom.window.document.getElementById('target');
+    element.style.backgroundImage = 'none';
+    const warnings = [];
+
+    await inlineBackgroundImage(element, warnings, { baseHref: 'https://example.com/base/' });
+
+    assert.strictEqual(
+      element.style.backgroundImage,
+      'url("https://example.com/images/HERO.PNG")',
+    );
+    assert.deepStrictEqual(warnings, []);
+  } finally {
+    global.window = previousGlobals.window;
+    global.document = previousGlobals.document;
+    global.getComputedStyle = previousGlobals.getComputedStyle;
   }
 });
 
