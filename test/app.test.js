@@ -433,3 +433,377 @@ test('buildEmailHTML produces inline email markup', async () => {
     delete global.window;
   }
 });
+
+class EmailExportMockCanvas {
+  constructor() {
+    this.width = 0;
+    this.height = 0;
+  }
+
+  getContext() {
+    return {
+      drawImage() {},
+    };
+  }
+
+  toDataURL(mime = 'image/png') {
+    return `data:${mime};base64,stub-inline`;
+  }
+}
+
+function createStyleProxy(target) {
+  const state = {};
+  const sync = () => {
+    const entries = Object.entries(state);
+    if (!entries.length) {
+      if (typeof target.__removeRawAttribute === 'function') {
+        target.__removeRawAttribute('style');
+      }
+      return;
+    }
+    const value = entries.map(([key, val]) => `${key}:${val}`).join('; ');
+    target.__setRawAttribute('style', value);
+  };
+  return new Proxy(state, {
+    set(obj, prop, value) {
+      if (value == null || value === '') {
+        delete obj[prop];
+      } else {
+        obj[prop] = String(value);
+      }
+      sync();
+      return true;
+    },
+    get(obj, prop) {
+      return obj[prop] || '';
+    },
+    has(obj, prop) {
+      return Object.prototype.hasOwnProperty.call(obj, prop);
+    },
+    deleteProperty(obj, prop) {
+      if (prop in obj) {
+        delete obj[prop];
+        sync();
+      }
+      return true;
+    },
+  });
+}
+
+class EmailExportMockImageElement {
+  constructor(owner, rawTag) {
+    this.owner = owner;
+    this.rawTag = rawTag;
+    this.attributes = new Map();
+    this.attributeOrder = [];
+    this.dataset = {};
+    this.classList = new Set();
+    this._styleProxy = null;
+    this.width = 0;
+    this.height = 0;
+    this.alt = '';
+    this._src = '';
+    this.currentSrc = '';
+    this.style = this._createStyleProxy();
+    this._parseAttributes(rawTag);
+  }
+
+  _createStyleProxy() {
+    if (!this._styleProxy) {
+      this._styleProxy = createStyleProxy(this);
+    }
+    return this._styleProxy;
+  }
+
+  _parseAttributes(rawTag) {
+    const attrRegex = /([a-zA-Z0-9:-]+)(?:\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+)))?/g;
+    let match;
+    while ((match = attrRegex.exec(rawTag))) {
+      const name = match[1];
+      const value = match[3] ?? match[4] ?? match[5] ?? '';
+      this.__setRawAttribute(name, value);
+      if (name === 'src') {
+        this._src = value;
+        this.currentSrc = value;
+      } else if (name === 'alt') {
+        this.alt = value;
+      } else if (name === 'width') {
+        this.width = Number(value) || 0;
+      } else if (name === 'height') {
+        this.height = Number(value) || 0;
+      } else if (name === 'style' && value) {
+        value.split(/;+/)
+          .map((item) => item.trim())
+          .filter(Boolean)
+          .forEach((pair) => {
+            const [prop, val] = pair.split(':');
+            if (prop && val != null) {
+              this.style[prop.trim()] = val.trim();
+            }
+          });
+      }
+    }
+  }
+
+  __setRawAttribute(name, value) {
+    if (!this.attributes.has(name)) {
+      this.attributeOrder.push(name);
+    }
+    this.attributes.set(name, String(value));
+    if (name === 'style' && !value) {
+      this.attributes.delete('style');
+      this.attributeOrder = this.attributeOrder.filter((attr) => attr !== 'style');
+    }
+  }
+
+  __removeRawAttribute(name) {
+    if (this.attributes.delete(name)) {
+      this.attributeOrder = this.attributeOrder.filter((attr) => attr !== name);
+    }
+  }
+
+  setAttribute(name, value) {
+    const stringValue = String(value);
+    if (name === 'style') {
+      this._styleProxy = createStyleProxy(this);
+      this.style = this._styleProxy;
+      this.__removeRawAttribute('style');
+      if (!stringValue) {
+        return;
+      }
+      const proxy = this._styleProxy;
+      stringValue.split(/;+/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .forEach((pair) => {
+          const [prop, val] = pair.split(':');
+          if (prop && val != null) {
+            proxy[prop.trim()] = val.trim();
+          }
+        });
+      return;
+    }
+    if (name === 'src') {
+      this.src = stringValue;
+      return;
+    }
+    if (!this.attributes.has(name)) {
+      this.attributeOrder.push(name);
+    }
+    this.attributes.set(name, stringValue);
+    if (name === 'alt') {
+      this.alt = stringValue;
+    }
+    if (name === 'width') {
+      this.width = Number(stringValue) || 0;
+    }
+    if (name === 'height') {
+      this.height = Number(stringValue) || 0;
+    }
+  }
+
+  removeAttribute(name) {
+    if (name === 'style') {
+      this._styleProxy = createStyleProxy(this);
+      this.style = this._styleProxy;
+    }
+    this.attributes.delete(name);
+    this.attributeOrder = this.attributeOrder.filter((attr) => attr !== name);
+  }
+
+  getAttribute(name) {
+    if (name === 'src') {
+      return this.src;
+    }
+    if (name === 'alt') {
+      return this.alt;
+    }
+    if (name === 'width') {
+      return this.width ? String(this.width) : null;
+    }
+    if (name === 'height') {
+      return this.height ? String(this.height) : null;
+    }
+    return this.attributes.get(name) ?? null;
+  }
+
+  set src(value) {
+    this._src = String(value);
+    this.currentSrc = this._src;
+    this.__setRawAttribute('src', this._src);
+  }
+
+  get src() {
+    return this._src;
+  }
+
+  getBoundingClientRect() {
+    return { width: this.width, height: this.height };
+  }
+
+  toHTML() {
+    const attrs = this.attributeOrder
+      .filter((name) => this.attributes.has(name))
+      .map((name) => `${name}="${this.attributes.get(name)}"`)
+      .join(' ');
+    return `<img${attrs ? ` ${attrs}` : ''}>`;
+  }
+}
+
+class EmailExportMockWrapper {
+  constructor(doc) {
+    this.doc = doc;
+    this.parts = [];
+    this.images = [];
+  }
+
+  set innerHTML(value) {
+    this.parts = [];
+    this.images = [];
+    const regex = /<img\b[^>]*>/gi;
+    let lastIndex = 0;
+    let match;
+    while ((match = regex.exec(value))) {
+      if (match.index > lastIndex) {
+        this.parts.push({ type: 'text', value: value.slice(lastIndex, match.index) });
+      }
+      const image = new EmailExportMockImageElement(this, match[0]);
+      if (this.doc.baseURI && image.src && !/^https?:|^data:|^file:/i.test(image.src)) {
+        try {
+          image.currentSrc = new URL(image.src, this.doc.baseURI).href;
+        } catch (error) {
+          image.currentSrc = image.src;
+        }
+      }
+      this.parts.push({ type: 'img', element: image });
+      this.images.push(image);
+      lastIndex = regex.lastIndex;
+    }
+    if (lastIndex < value.length) {
+      this.parts.push({ type: 'text', value: value.slice(lastIndex) });
+    }
+  }
+
+  get innerHTML() {
+    return this.parts
+      .map((part) => (part.type === 'text' ? part.value : part.element.toHTML()))
+      .join('');
+  }
+
+  querySelectorAll(selector) {
+    if (selector === 'canvas') {
+      return [];
+    }
+    if (selector === 'img' || selector === '*') {
+      return this.images.slice();
+    }
+    return [];
+  }
+}
+
+class EmailExportMockDocument {
+  constructor(baseHref) {
+    this.baseURI = baseHref || 'file:///Users/test/proposal.html';
+  }
+
+  createElement(tagName) {
+    if (tagName === 'div') {
+      return new EmailExportMockWrapper(this);
+    }
+    if (tagName === 'canvas') {
+      return new EmailExportMockCanvas();
+    }
+    if (tagName === 'img') {
+      return new EmailExportMockImageElement(null, '<img>');
+    }
+    return null;
+  }
+}
+
+class EmailExportMockImage {
+  constructor() {
+    this.decoding = 'sync';
+    this.crossOrigin = null;
+    this.referrerPolicy = null;
+    this.naturalWidth = 64;
+    this.naturalHeight = 64;
+    this._src = '';
+  }
+
+  set src(value) {
+    this._src = value;
+  }
+
+  get src() {
+    return this._src;
+  }
+
+  async decode() {
+    return undefined;
+  }
+}
+
+test('email export replaces local feature icons with data URIs', async () => {
+  const { __private: emailExportPrivate } = require('../js/emailExport.js');
+  const originalDocument = global.document;
+  const originalWindow = global.window;
+  const originalImage = global.Image;
+  const originalGetComputedStyle = global.getComputedStyle;
+
+  const mockDocument = new EmailExportMockDocument('file:///Users/test/index.html');
+  global.document = mockDocument;
+  global.window = {
+    getComputedStyle() {
+      return {
+        backgroundImage: 'none',
+        backgroundColor: 'transparent',
+      };
+    },
+  };
+  global.Image = EmailExportMockImage;
+  global.getComputedStyle = global.window.getComputedStyle;
+
+  try {
+    const proposal = {
+      brand: {},
+      features: [
+        {
+          title: 'Inline Icon',
+          description: 'Local asset',
+          image: {
+            src: './icons/local.png',
+            alt: 'Local icon',
+            width: 72,
+            height: 72,
+          },
+        },
+      ],
+      baseHref: 'file:///Users/test/index.html',
+    };
+
+    const result = await emailExportPrivate.buildEmailExportHTML(proposal);
+    assert.ok(result.html.includes('data:image/png;base64,stub-inline'));
+    assert.ok(!result.html.includes('file:///'));
+  } finally {
+    if (originalDocument === undefined) {
+      delete global.document;
+    } else {
+      global.document = originalDocument;
+    }
+    if (originalWindow === undefined) {
+      delete global.window;
+    } else {
+      global.window = originalWindow;
+    }
+    if (originalImage === undefined) {
+      delete global.Image;
+    } else {
+      global.Image = originalImage;
+    }
+    if (originalGetComputedStyle === undefined) {
+      delete global.getComputedStyle;
+    } else {
+      global.getComputedStyle = originalGetComputedStyle;
+    }
+  }
+});
