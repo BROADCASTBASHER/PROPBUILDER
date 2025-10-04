@@ -6,7 +6,13 @@ const {
   esc,
   bulletify,
   buildEmailHTML,
+  exportEmailHTML,
+  exportEmailEML,
   state,
+  __setEmailBuilder__,
+  __resetEmailBuilder__,
+  __setEmailEmlBuilder__,
+  __resetEmailEmlBuilder__,
 } = require('../js/app.js');
 
 const cloneState = () => JSON.parse(JSON.stringify(state));
@@ -31,6 +37,7 @@ class MockElement {
   constructor(tagName, document) {
     this.tagName = tagName.toUpperCase();
     this.document = document;
+    this.ownerDocument = document;
     this.children = [];
     this.parentNode = null;
     this.attributes = new Map();
@@ -39,6 +46,7 @@ class MockElement {
     this.style = {};
     this._text = '';
     this._innerHTML = '';
+    this.click = () => {};
   }
 
   set textContent(value) {
@@ -61,10 +69,27 @@ class MockElement {
     if (!child) {
       return child;
     }
+    if (child.isFragment) {
+      const nodes = Array.from(child.children || []);
+      child.children.length = 0;
+      nodes.forEach((node) => {
+        this.appendChild(node);
+      });
+      return child;
+    }
     child.parentNode = this;
     this.children.push(child);
     if (child.id) {
       this.document.registerId(child);
+    }
+    return child;
+  }
+
+  removeChild(child) {
+    const index = this.children.indexOf(child);
+    if (index >= 0) {
+      this.children.splice(index, 1);
+      child.parentNode = null;
     }
     return child;
   }
@@ -121,7 +146,9 @@ class MockElement {
 class MockDocument {
   constructor() {
     this.body = new MockElement('body', this);
+    this.documentElement = this.body;
     this.elementsById = new Map();
+    this.downloads = [];
   }
 
   registerId(element) {
@@ -131,7 +158,25 @@ class MockDocument {
   }
 
   createElement(tagName) {
-    return new MockElement(tagName, this);
+    const element = new MockElement(tagName, this);
+    if (element.tagName === 'A') {
+      element.click = function click() {
+        this.clicked = true;
+        if (this.document && Array.isArray(this.document.downloads)) {
+          this.document.downloads.push({
+            download: this.download,
+            href: this.href,
+          });
+        }
+      };
+    }
+    return element;
+  }
+
+  createDocumentFragment() {
+    const fragment = new MockElement('#fragment', this);
+    fragment.isFragment = true;
+    return fragment;
   }
 
   getElementById(id) {
@@ -918,5 +963,93 @@ test('email export inlines HTTPS pictogram icons as data URIs', async () => {
     } else {
       global.FileReader = originalFileReader;
     }
+  }
+});
+
+test('exportEmailHTML triggers download of generated markup', async () => {
+  const snapshot = cloneState();
+  const doc = new MockDocument();
+  const originalDocument = global.document;
+  const originalURL = global.URL;
+  const urlCalls = [];
+
+  global.document = doc;
+  global.URL = {
+    createObjectURL(blob) {
+      urlCalls.push(blob);
+      return `blob:mock-${urlCalls.length}`;
+    },
+    revokeObjectURL() {},
+  };
+
+  try {
+    __setEmailBuilder__(async () => ({ html: '<html><body>Preview</body></html>' }));
+    await exportEmailHTML();
+    assert.strictEqual(doc.downloads.length, 1);
+    const [download] = doc.downloads;
+    assert.strictEqual(download.download, 'TBTC_VIC_EAST_Proposal.html');
+    assert.strictEqual(download.href, 'blob:mock-1');
+    assert.strictEqual(urlCalls.length, 1);
+    assert.strictEqual(urlCalls[0].type, 'text/html;charset=utf-8');
+    const text = await urlCalls[0].text();
+    assert.strictEqual(text, '<html><body>Preview</body></html>');
+    assert.strictEqual(doc.body.children.length, 0);
+  } finally {
+    __resetEmailBuilder__();
+    if (originalDocument === undefined) {
+      delete global.document;
+    } else {
+      global.document = originalDocument;
+    }
+    if (originalURL === undefined) {
+      delete global.URL;
+    } else {
+      global.URL = originalURL;
+    }
+    restoreState(snapshot);
+  }
+});
+
+test('exportEmailEML triggers download of generated message', async () => {
+  const snapshot = cloneState();
+  const doc = new MockDocument();
+  const originalDocument = global.document;
+  const originalURL = global.URL;
+  const urlCalls = [];
+
+  global.document = doc;
+  global.URL = {
+    createObjectURL(blob) {
+      urlCalls.push(blob);
+      return `blob:mock-${urlCalls.length}`;
+    },
+    revokeObjectURL() {},
+  };
+
+  try {
+    __setEmailEmlBuilder__(async () => ({ eml: 'From: Example <example@test>\r\n', html: '<html></html>' }));
+    await exportEmailEML();
+    assert.strictEqual(doc.downloads.length, 1);
+    const [download] = doc.downloads;
+    assert.strictEqual(download.download, 'TBTC_VIC_EAST_Proposal.eml');
+    assert.strictEqual(download.href, 'blob:mock-1');
+    assert.strictEqual(urlCalls.length, 1);
+    assert.strictEqual(urlCalls[0].type, 'message/rfc822');
+    const text = await urlCalls[0].text();
+    assert.strictEqual(text, 'From: Example <example@test>\r\n');
+    assert.strictEqual(doc.body.children.length, 0);
+  } finally {
+    __resetEmailEmlBuilder__();
+    if (originalDocument === undefined) {
+      delete global.document;
+    } else {
+      global.document = originalDocument;
+    }
+    if (originalURL === undefined) {
+      delete global.URL;
+    } else {
+      global.URL = originalURL;
+    }
+    restoreState(snapshot);
   }
 });
