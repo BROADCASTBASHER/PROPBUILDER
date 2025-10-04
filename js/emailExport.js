@@ -418,6 +418,7 @@ function ensureImageAttributes(image, fallbackWidth, fallbackHeight) {
 }
 
 async function inlineAllRasterImages(root, warnings, options = {}) {
+  const baseHref = options?.baseHref || getBaseHref();
   const canvases = Array.from(root.querySelectorAll('canvas'));
   for (const canvas of canvases) {
     const img = document.createElement('img');
@@ -436,9 +437,17 @@ async function inlineAllRasterImages(root, warnings, options = {}) {
   for (const image of images) {
     const currentSrc = image.currentSrc || image.src;
     if (currentSrc && !/^data:/i.test(currentSrc)) {
-      const absolute = toAbsoluteHttpsUrl(currentSrc, options?.baseHref || getBaseHref());
-      if (absolute) {
+      const absolute = toAbsoluteHttpsUrl(currentSrc, baseHref);
+      const isHttps = absolute && /^https:/i.test(absolute);
+      if (isHttps) {
         image.src = absolute;
+      } else {
+        const inlineResult = await imgElementToDataURI(image, warnings);
+        if (inlineResult?.dataUri) {
+          image.src = inlineResult.dataUri;
+        } else if (absolute) {
+          image.src = absolute;
+        }
       }
     }
     ensureImageAttributes(image);
