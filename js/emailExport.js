@@ -438,16 +438,14 @@ async function inlineAllRasterImages(root, warnings, options = {}) {
     const currentSrc = image.currentSrc || image.src;
     if (currentSrc && !/^data:/i.test(currentSrc)) {
       const absolute = toAbsoluteHttpsUrl(currentSrc, baseHref);
-      const isHttps = absolute && /^https:/i.test(absolute);
-      if (isHttps) {
+      if (absolute && image.src !== absolute) {
         image.src = absolute;
-      } else {
-        const inlineResult = await imgElementToDataURI(image, warnings);
-        if (inlineResult?.dataUri) {
-          image.src = inlineResult.dataUri;
-        } else if (absolute) {
-          image.src = absolute;
-        }
+      }
+      const inlineResult = await imgElementToDataURI(image, warnings);
+      if (inlineResult?.dataUri) {
+        image.src = inlineResult.dataUri;
+      } else if (absolute) {
+        image.src = absolute;
       }
     }
     ensureImageAttributes(image);
