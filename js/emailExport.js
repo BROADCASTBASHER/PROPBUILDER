@@ -100,7 +100,35 @@ function toDataURLViaFileReader(blob, mimeHint) {
 }
 
 async function fetchAsDataURL(url) {
-  const resp = await fetch(url, { credentials: 'omit', mode: 'cors' }).catch(() => null);
+  let requestUrl = url;
+  let credentials = 'omit';
+
+  try {
+    const resolved = new URL(url, getBaseHref());
+    requestUrl = resolved.href;
+
+    const currentOrigin = (() => {
+      if (typeof window !== 'undefined' && window?.location?.origin) {
+        return window.location.origin;
+      }
+      if (typeof location !== 'undefined' && location?.origin) {
+        return location.origin;
+      }
+      try {
+        return new URL(getBaseHref()).origin;
+      } catch (error) {
+        return null;
+      }
+    })();
+
+    if (currentOrigin && resolved.origin === currentOrigin) {
+      credentials = 'include';
+    }
+  } catch (error) {
+    requestUrl = url;
+  }
+
+  const resp = await fetch(requestUrl, { credentials, mode: 'cors' }).catch(() => null);
   if (!resp || !resp.ok) {
     throw new Error(`Fetch failed: ${url}`);
   }
@@ -171,11 +199,25 @@ async function imgElementToDataURI(img, warnings) {
     }
 
     const canUseFetch = !src.startsWith('file:');
+    let fetchError = null;
     if (canUseFetch) {
-      return await fetchAsDataURL(src);
+      try {
+        return await fetchAsDataURL(src);
+      } catch (error) {
+        fetchError = error;
+      }
     }
 
-    return await imageSrcToCanvasDataURI(src);
+    try {
+      return await imageSrcToCanvasDataURI(src);
+    } catch (canvasError) {
+      if (fetchError) {
+        const fetchMessage = fetchError?.message || String(fetchError || 'fetch failed');
+        const canvasMessage = canvasError?.message || String(canvasError || 'canvas fallback failed');
+        throw new Error(`${fetchMessage}; canvas fallback failed: ${canvasMessage}`);
+      }
+      throw canvasError;
+    }
   } catch (error) {
     warnings.push(`IMG inline failed: ${img.alt || '[no alt]'} — ${error?.message || error}`);
     return null;
