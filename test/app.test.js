@@ -807,3 +807,116 @@ test('email export replaces local feature icons with data URIs', async () => {
     }
   }
 });
+
+test('email export inlines HTTPS pictogram icons as data URIs', async () => {
+  const { __private: emailExportPrivate } = require('../js/emailExport.js');
+  const originalDocument = global.document;
+  const originalWindow = global.window;
+  const originalImage = global.Image;
+  const originalGetComputedStyle = global.getComputedStyle;
+  const originalFetch = global.fetch;
+  const originalFileReader = global.FileReader;
+
+  const mockDocument = new EmailExportMockDocument('https://example.com/proposal/index.html');
+  global.document = mockDocument;
+  global.window = {
+    getComputedStyle() {
+      return {
+        backgroundImage: 'none',
+        backgroundColor: 'transparent',
+      };
+    },
+  };
+  global.Image = EmailExportMockImage;
+  global.getComputedStyle = global.window.getComputedStyle;
+
+  const fetchedUrls = [];
+  global.fetch = async (url) => {
+    fetchedUrls.push(url);
+    return {
+      ok: true,
+      async blob() {
+        return { type: 'image/png' };
+      },
+    };
+  };
+
+  class StubFileReader {
+    constructor() {
+      this.result = '';
+      this.onload = null;
+      this.onerror = null;
+    }
+
+    readAsDataURL(blob) {
+      if (!blob) {
+        if (typeof this.onerror === 'function') {
+          this.onerror(new Error('No blob provided'));
+        }
+        return;
+      }
+      const mime = blob.type || 'image/png';
+      this.result = `data:${mime};base64,stub-fetch`;
+      if (typeof this.onload === 'function') {
+        this.onload();
+      }
+    }
+  }
+
+  global.FileReader = StubFileReader;
+
+  try {
+    const proposal = {
+      brand: {},
+      features: [
+        {
+          title: 'HTTPS Icon',
+          description: 'CDN asset',
+          image: {
+            src: '/Pictograms/secure.png',
+            alt: 'Secure icon',
+            width: 48,
+            height: 48,
+          },
+        },
+      ],
+      baseHref: 'https://example.com/proposal/index.html',
+    };
+
+    const result = await emailExportPrivate.buildEmailExportHTML(proposal);
+    assert.ok(result.html.includes('data:image/png;base64,stub-fetch'));
+    assert.ok(!result.html.includes('https://example.com/Pictograms/secure.png'));
+    assert.deepEqual(fetchedUrls, ['https://example.com/Pictograms/secure.png']);
+  } finally {
+    if (originalDocument === undefined) {
+      delete global.document;
+    } else {
+      global.document = originalDocument;
+    }
+    if (originalWindow === undefined) {
+      delete global.window;
+    } else {
+      global.window = originalWindow;
+    }
+    if (originalImage === undefined) {
+      delete global.Image;
+    } else {
+      global.Image = originalImage;
+    }
+    if (originalGetComputedStyle === undefined) {
+      delete global.getComputedStyle;
+    } else {
+      global.getComputedStyle = originalGetComputedStyle;
+    }
+    if (originalFetch === undefined) {
+      delete global.fetch;
+    } else {
+      global.fetch = originalFetch;
+    }
+    if (originalFileReader === undefined) {
+      delete global.FileReader;
+    } else {
+      global.FileReader = originalFileReader;
+    }
+  }
+});
