@@ -100,17 +100,29 @@ function toDataURLViaFileReader(blob, mimeHint) {
 }
 
 async function fetchAsDataURL(url) {
-  const resp = await fetch(url, { credentials: 'include' }).catch(() => null);
+  const resp = await fetch(url, { credentials: 'omit', mode: 'cors' }).catch(() => null);
   if (!resp || !resp.ok) {
     throw new Error(`Fetch failed: ${url}`);
   }
   const blob = await resp.blob();
   const mime = mimeFromExtOrBlob(url, blob);
-  const dataUri = await toDataURLViaFileReader(blob, mime);
-  return { dataUri, mime };
+
+  try {
+    const dataUri = await toDataURLViaFileReader(blob, mime);
+    return { dataUri, mime };
+  } catch (readerError) {
+    try {
+      const dataUri = await imageBlobToCanvasDataURI(blob, mime);
+      return { dataUri, mime };
+    } catch (canvasError) {
+      const readerMessage = readerError?.message || String(readerError || 'readAsDataURL failed');
+      const canvasMessage = canvasError?.message || String(canvasError || 'canvas fallback failed');
+      throw new Error(`${readerMessage} (canvas fallback failed: ${canvasMessage})`);
+    }
+  }
 }
 
-async function imageSrcToCanvasDataURI(src) {
+async function imageSrcToCanvasDataURI(src, mimeHint) {
   const tmp = new Image();
   if (!src.startsWith('file:')) {
     tmp.crossOrigin = 'anonymous';
@@ -132,9 +144,19 @@ async function imageSrcToCanvasDataURI(src) {
     throw new Error('canvas ctx null');
   }
   ctx.drawImage(tmp, 0, 0);
-  const mime = mimeFromExtOrBlob(src);
+  const mime = mimeHint || mimeFromExtOrBlob(src);
   const dataUri = canvas.toDataURL(mime);
   return { dataUri, mime };
+}
+
+async function imageBlobToCanvasDataURI(blob, mimeHint) {
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    const { dataUri } = await imageSrcToCanvasDataURI(objectUrl, mimeHint);
+    return dataUri;
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
 }
 
 async function imgElementToDataURI(img, warnings) {
@@ -150,11 +172,7 @@ async function imgElementToDataURI(img, warnings) {
 
     const canUseFetch = !src.startsWith('file:');
     if (canUseFetch) {
-      try {
-        return await fetchAsDataURL(src);
-      } catch (error) {
-        // fall through to canvas fallback
-      }
+      return await fetchAsDataURL(src);
     }
 
     return await imageSrcToCanvasDataURI(src);
