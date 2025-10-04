@@ -285,13 +285,14 @@ async function inlineBackgroundImage(el, warnings, options = {}) {
     if (!value) {
       return value;
     }
-    return value.replace(/url\((['"]?)(.*?)\1\)/g, (match, quote, rawUrl) => {
-      if (!rawUrl || /^data:/i.test(rawUrl)) {
+    return value.replace(/url\((['"]?)(.*?)\1\)/gi, (match, quote, rawUrl) => {
+      const cleaned = (rawUrl || '').trim();
+      if (!cleaned || /^data:/i.test(cleaned)) {
         return match;
       }
-      const absolute = toAbsoluteHttpsUrl(rawUrl, baseHref);
+      const absolute = toAbsoluteHttpsUrl(cleaned, baseHref);
       if (!absolute) {
-        warnings.push(`BG image inline failed: ${rawUrl} — unable to resolve URL`);
+        warnings.push(`BG image inline failed: ${cleaned} — unable to resolve URL`);
         return match;
       }
       return cssUrl(absolute);
