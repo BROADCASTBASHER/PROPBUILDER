@@ -761,7 +761,13 @@ function collectProposalForEmail(doc) {
 
 
 // main
+let emailBuilderOverride = null;
+let emailEmlBuilderOverride = null;
+
 function resolveEmailBuilder() {
+  if (emailBuilderOverride) {
+    return emailBuilderOverride;
+  }
   if (typeof window !== 'undefined' && window.PropBuilderEmailExport && typeof window.PropBuilderEmailExport.generateEmailExport === 'function') {
     return window.PropBuilderEmailExport.generateEmailExport;
   }
@@ -777,6 +783,9 @@ function resolveEmailBuilder() {
 }
 
 function resolveEmailEmlBuilder() {
+  if (emailEmlBuilderOverride) {
+    return emailEmlBuilderOverride;
+  }
   if (typeof window !== 'undefined'
     && window.PropBuilderEmailExport
     && typeof window.PropBuilderEmailExport.generatePreviewEmailEml === 'function') {
@@ -804,6 +813,18 @@ async function buildEmailHTML() {
   }
   const result = await builder(doc);
   return result && result.html ? result.html : '';
+}
+
+async function exportEmailHTML() {
+  const doc = typeof document !== 'undefined' ? document : null;
+  if (!doc) {
+    return;
+  }
+  const html = await buildEmailHTML();
+  if (!html) {
+    throw new Error('No email HTML generated');
+  }
+  triggerDownloadFromText(doc, 'TBTC_VIC_EAST_Proposal.html', html, 'text/html;charset=utf-8');
 }
 
 async function exportEmailEML() {
@@ -863,6 +884,7 @@ function initializeApp() {
 
   const doc = document;
   const exportEmailBtn = doc.getElementById('btnExportEmail');
+  const exportEmailEmlBtn = doc.getElementById('btnExportEmailEml');
   const logoMap = (typeof window !== 'undefined' && window.__LOGO_DATA__ && typeof window.__LOGO_DATA__ === 'object')
     ? window.__LOGO_DATA__
     : {};
@@ -2380,6 +2402,18 @@ function initializeApp() {
   if (exportEmailBtn && typeof exportEmailBtn.addEventListener === 'function') {
     exportEmailBtn.addEventListener('click', async () => {
       try {
+        await exportEmailHTML();
+      } catch (error) {
+        if (typeof console !== 'undefined' && console && typeof console.error === 'function') {
+          console.error('Unable to export email HTML', error);
+        }
+      }
+    });
+  }
+
+  if (exportEmailEmlBtn && typeof exportEmailEmlBtn.addEventListener === 'function') {
+    exportEmailEmlBtn.addEventListener('click', async () => {
+      try {
         await exportEmailEML();
       } catch (error) {
         if (typeof console !== 'undefined' && console && typeof console.error === 'function') {
@@ -2447,6 +2481,8 @@ if (typeof module !== 'undefined' && module.exports) {
     bulletify,
     __rgbToHex__px,
     buildEmailHTML,
+    exportEmailHTML,
+    exportEmailEML,
     initializeApp,
     state,
     PRESETS,
@@ -2457,6 +2493,18 @@ if (typeof module !== 'undefined' && module.exports) {
     },
     __resetFetchImageAsDataUrl__() {
       fetchImageAsDataUrlImpl = defaultFetchImageAsDataUrl;
+    },
+    __setEmailBuilder__(fn) {
+      emailBuilderOverride = typeof fn === 'function' ? fn : null;
+    },
+    __resetEmailBuilder__() {
+      emailBuilderOverride = null;
+    },
+    __setEmailEmlBuilder__(fn) {
+      emailEmlBuilderOverride = typeof fn === 'function' ? fn : null;
+    },
+    __resetEmailEmlBuilder__() {
+      emailEmlBuilderOverride = null;
     },
   };
 }
