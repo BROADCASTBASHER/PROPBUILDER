@@ -776,6 +776,23 @@ function resolveEmailBuilder() {
   return null;
 }
 
+function resolveEmailEmlBuilder() {
+  if (typeof window !== 'undefined'
+    && window.PropBuilderEmailExport
+    && typeof window.PropBuilderEmailExport.generatePreviewEmailEml === 'function') {
+    return window.PropBuilderEmailExport.generatePreviewEmailEml;
+  }
+  try {
+    const mod = require('./emailExport');
+    if (mod && typeof mod.generatePreviewEmailEml === 'function') {
+      return mod.generatePreviewEmailEml;
+    }
+  } catch (error) {
+    // ignore module resolution errors in browser
+  }
+  return null;
+}
+
 async function buildEmailHTML() {
   const doc = typeof document !== 'undefined' ? document : (typeof global !== 'undefined' && global.document ? global.document : null);
   if (!doc) {
@@ -787,6 +804,23 @@ async function buildEmailHTML() {
   }
   const result = await builder(doc);
   return result && result.html ? result.html : '';
+}
+
+async function exportEmailEML() {
+  const doc = typeof document !== 'undefined' ? document : null;
+  if (!doc) {
+    return;
+  }
+  const builder = resolveEmailEmlBuilder();
+  if (!builder) {
+    throw new Error('Email EML builder unavailable');
+  }
+  const payload = await builder(doc);
+  const eml = payload?.eml || '';
+  if (!eml) {
+    throw new Error('No email message generated');
+  }
+  triggerDownloadFromText(doc, 'TBTC_VIC_EAST_Proposal.eml', eml, 'message/rfc822');
 }
 
 function triggerDownloadFromText(doc, filename, text, mimeType = 'text/plain;charset=utf-8') {
@@ -2346,14 +2380,10 @@ function initializeApp() {
   if (exportEmailBtn && typeof exportEmailBtn.addEventListener === 'function') {
     exportEmailBtn.addEventListener('click', async () => {
       try {
-        const html = await buildEmailHTML();
-        if (!html) {
-          throw new Error('No email markup generated');
-        }
-        triggerDownloadFromText(doc, 'proposal-email.html', html, 'text/html;charset=utf-8');
+        await exportEmailEML();
       } catch (error) {
         if (typeof console !== 'undefined' && console && typeof console.error === 'function') {
-          console.error('Unable to export email HTML', error);
+          console.error('Unable to export email EML', error);
         }
       }
     });

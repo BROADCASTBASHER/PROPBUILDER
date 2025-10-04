@@ -2,228 +2,63 @@ const test = require('node:test');
 const assert = require('node:assert');
 
 const {
-  __private: { inlineAllRasterImages, inlineBackgroundImage, renderFeatureCard },
-} = require('../js/emailExport.js');
+  composeEmlMessage,
+  encodeQuotedPrintable,
+  chunkBase64,
+  dataUriToBinary,
+} = require('../js/emailExport.js').__private;
 
-const createStyle = () => ({
-  backgroundImage: '',
-  width: '',
-  height: '',
-  display: '',
-  border: '',
-  maxWidth: '',
+test('encodeQuotedPrintable handles trailing spaces and equals signs', () => {
+  const encoded = encodeQuotedPrintable('Line = test \nSpace ');
+  assert.strictEqual(encoded.includes('=3D'), true);
+  assert.strictEqual(encoded.endsWith('=20'), true);
 });
 
-test('inlineBackgroundImage resolves URLs to HTTPS', async () => {
-  const originalDocument = global.document;
-  const originalGetComputedStyle = global.getComputedStyle;
-
-  const element = {
-    style: createStyle(),
-  };
-
-  try {
-    global.document = { baseURI: 'http://example.com/base/index.html' };
-    global.getComputedStyle = () => ({ backgroundImage: 'url("/assets/bg.png"), linear-gradient(red, blue)' });
-
-    element.style.backgroundImage = 'url("http://cdn.example.com/legacy.jpg")';
-
-    const warnings = [];
-    await inlineBackgroundImage(element, warnings, {});
-
-    assert.deepStrictEqual(warnings, []);
-    assert.strictEqual(
-      element.style.backgroundImage,
-      'url("https://cdn.example.com/legacy.jpg")'
-    );
-  } finally {
-    if (originalDocument === undefined) {
-      delete global.document;
-    } else {
-      global.document = originalDocument;
-    }
-    if (originalGetComputedStyle === undefined) {
-      delete global.getComputedStyle;
-    } else {
-      global.getComputedStyle = originalGetComputedStyle;
-    }
+test('chunkBase64 wraps lines at 76 characters', () => {
+  const bytes = new Uint8Array(120);
+  for (let index = 0; index < bytes.length; index += 1) {
+    bytes[index] = index % 256;
   }
+  const base64 = chunkBase64(bytes);
+  const lines = base64.split('\r\n').filter(Boolean);
+  assert(lines.every((line) => line.length <= 76));
 });
 
-test('inlineAllRasterImages keeps HTTPS and uploads canvases', async () => {
-  const originalDocument = global.document;
-  const originalFetch = global.fetch;
-  const originalBlob = global.Blob;
-  const originalGetComputedStyle = global.getComputedStyle;
-
-  const createdImages = [];
-
-  const documentMock = {
-    baseURI: 'http://example.com/app/',
-    createElement(tag) {
-      assert.strictEqual(tag, 'img');
-      const style = createStyle();
-      const attributes = {};
-      const node = {
-        tagName: 'IMG',
-        style,
-        attributes,
-        naturalWidth: 0,
-        naturalHeight: 0,
-        setAttribute(name, value) {
-          attributes[name] = String(value);
-        },
-        removeAttribute(name) {
-          delete attributes[name];
-        },
-        getBoundingClientRect() {
-          return { width: this._rectWidth || 120, height: this._rectHeight || 80 };
-        },
-      };
-      createdImages.push(node);
-      return node;
-    },
-  };
-
-  const canvas = {
-    width: 320,
-    height: 180,
-    clientWidth: 320,
-    clientHeight: 180,
-    style: createStyle(),
-    toBlob(callback) {
-      const blob = new Blob(['canvasdata'], { type: 'image/png' });
-      callback(blob);
-    },
-    replaceWith(node) {
-      canvases.length = 0;
-      images.push(node);
-      allElements.push(node);
-    },
-  };
-
-  const image = {
-    src: '/media/photo.jpg',
-    currentSrc: '/media/photo.jpg',
-    style: createStyle(),
-    naturalWidth: 640,
-    naturalHeight: 320,
-    attributes: { srcset: 'x' },
-    removeAttribute(name) {
-      delete this.attributes[name];
-    },
-    setAttribute(name, value) {
-      this.attributes[name] = String(value);
-    },
-    getBoundingClientRect() {
-      return { width: 200, height: 100 };
-    },
-  };
-
-  const backgroundElement = {
-    style: { backgroundImage: 'url("/bg/pattern.png")' },
-  };
-
-  const canvases = [canvas];
-  const images = [image];
-  const allElements = [backgroundElement];
-
-  const root = {
-    querySelectorAll(selector) {
-      if (selector === 'canvas') {
-        return canvases;
-      }
-      if (selector === 'img') {
-        return images;
-      }
-      if (selector === '*') {
-        return allElements;
-      }
-      return [];
-    },
-  };
-
-  const warnings = [];
-
-  try {
-    global.document = documentMock;
-    global.fetch = undefined;
-    global.getComputedStyle = (node) => node.style || createStyle();
-
-    const uploadCalls = [];
-    const options = {
-      uploadCanvas: async ({ blob }) => {
-        uploadCalls.push(blob);
-        assert.strictEqual(blob.type, 'image/png');
-        return 'https://cdn.example.com/uploaded/canvas.png';
-      },
-    };
-
-    await inlineAllRasterImages(root, warnings, options);
-
-    assert.strictEqual(uploadCalls.length, 1);
-    assert.deepStrictEqual(warnings, []);
-
-    assert.strictEqual(images[1].src, 'https://cdn.example.com/uploaded/canvas.png');
-    assert.strictEqual(images[1].style.display, 'block');
-    assert.strictEqual(images[1].style.border, '0');
-    assert.strictEqual(images[1].attributes.width, '320');
-    assert.strictEqual(images[1].attributes.height, '180');
-
-    assert.strictEqual(image.src, 'https://example.com/media/photo.jpg');
-    assert.strictEqual(image.style.display, 'block');
-    assert.strictEqual(image.style.border, '0');
-    assert.strictEqual(image.attributes.width, '200');
-    assert.strictEqual(image.attributes.height, '100');
-    assert.strictEqual(image.attributes.srcset, undefined);
-
-    assert.strictEqual(
-      backgroundElement.style.backgroundImage,
-      'url("https://example.com/bg/pattern.png")'
-    );
-  } finally {
-    if (originalDocument === undefined) {
-      delete global.document;
-    } else {
-      global.document = originalDocument;
-    }
-    if (originalFetch === undefined) {
-      delete global.fetch;
-    } else {
-      global.fetch = originalFetch;
-    }
-    if (originalBlob === undefined) {
-      delete global.Blob;
-    } else {
-      global.Blob = originalBlob;
-    }
-    if (originalGetComputedStyle === undefined) {
-      delete global.getComputedStyle;
-    } else {
-      global.getComputedStyle = originalGetComputedStyle;
-    }
-  }
+test('dataUriToBinary converts base64 data URIs', () => {
+  const uri = 'data:image/png;base64,AAEC';
+  const result = dataUriToBinary(uri, 'image/png');
+  assert(result);
+  assert.strictEqual(result.mime, 'image/png');
+  assert.deepStrictEqual(Array.from(result.content), [0, 1, 2]);
 });
 
-test('renderFeatureCard uses <img> for background images', async () => {
-  const feature = {
-    title: 'Background Feature',
-    image: {
-      background: true,
-      src: 'https://cdn.example.com/background.png',
-      width: 400,
-      height: 220,
-      css: 'border-radius:20px; box-shadow:0 0 10px rgba(0,0,0,0.2);',
-      alt: 'Background graphic',
-    },
+test('composeEmlMessage builds multipart related output', () => {
+  const metadata = {
+    from: 'From Name <from@example.com>',
+    to: 'To Name <to@example.com>',
+    subject: 'Subject Line',
+    date: 'Wed, 01 Jan 2025 00:00:00 GMT',
+    messageId: '<message@test>',
+  };
+  const html = '<html><body><p>Hello</p></body></html>';
+  const text = 'Hello';
+  const attachment = {
+    mime: 'image/png',
+    filename: 'image.png',
+    cid: 'image1@test',
+    content: new Uint8Array([0x89, 0x50, 0x4E, 0x47]),
   };
 
-  const html = await renderFeatureCard(feature, null, []);
+  const message = composeEmlMessage(metadata, html, text, [attachment]);
 
-  assert.ok(html.includes('<img'));
-  assert.ok(html.includes('src="https://cdn.example.com/background.png"'));
-  assert.ok(html.includes('height="220"'));
-  assert.ok(html.includes('object-fit:cover'));
-  assert.ok(html.includes('box-shadow:0 0 10px rgba(0,0,0,0.2)'));
-  assert.ok(!html.includes('background-image'));
+  assert.match(message, /From: From Name <from@example.com>/);
+  assert.match(message, /To: To Name <to@example.com>/);
+  assert.match(message, /Subject: Subject Line/);
+  assert.match(message, /Content-Type: multipart\/related; type="multipart\/alternative"; boundary="rel-/);
+  assert.match(message, /Content-Type: multipart\/alternative; boundary="alt-/);
+  assert.match(message, /Content-Type: text\/plain; charset="utf-8"/);
+  assert.match(message, /Content-Type: text\/html; charset="utf-8"/);
+  assert.match(message, /Content-ID: <image1@test>/);
+  assert.match(message, /filename="image.png"/);
 });
+
