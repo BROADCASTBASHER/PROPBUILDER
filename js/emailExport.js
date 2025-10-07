@@ -500,6 +500,23 @@ async function inlineAllRasterImages(root, warnings, options = {}) {
   }
 }
 
+function buildRasterOptionsFromProposal(proposal) {
+  const rasterOptions = {};
+  if (proposal?.imageUploadEndpoint) {
+    rasterOptions.imageUploadEndpoint = proposal.imageUploadEndpoint;
+  }
+  if (proposal?.uploadEndpoint && !rasterOptions.imageUploadEndpoint) {
+    rasterOptions.uploadEndpoint = proposal.uploadEndpoint;
+  }
+  if (typeof proposal?.uploadCanvas === 'function') {
+    rasterOptions.uploadCanvas = proposal.uploadCanvas;
+  }
+  if (proposal?.baseHref) {
+    rasterOptions.baseHref = proposal.baseHref;
+  }
+  return rasterOptions;
+}
+
 function sanitizeHTML(input) {
   if (!input) {
     return '';
@@ -922,11 +939,7 @@ function splitFeatures(features) {
   return { standard, hero };
 }
 
-async function buildEmailExportHTML(proposal) {
-  if (!proposal || typeof proposal !== 'object') {
-    throw new Error('A proposal object is required');
-  }
-  const warnings = [];
+async function buildLegacyEmailExportHTML(proposal, warnings) {
   const brand = normalizeBrand(proposal.brand);
   const contentParts = [];
 
@@ -1001,25 +1014,11 @@ async function buildEmailExportHTML(proposal) {
   const wrapper = document.createElement('div');
   wrapper.innerHTML = wrapperMarkup;
 
-  const rasterOptions = {};
-  if (proposal?.imageUploadEndpoint) {
-    rasterOptions.imageUploadEndpoint = proposal.imageUploadEndpoint;
-  }
-  if (proposal?.uploadEndpoint && !rasterOptions.imageUploadEndpoint) {
-    rasterOptions.uploadEndpoint = proposal.uploadEndpoint;
-  }
-  if (typeof proposal?.uploadCanvas === 'function') {
-    rasterOptions.uploadCanvas = proposal.uploadCanvas;
-  }
-  if (proposal?.baseHref) {
-    rasterOptions.baseHref = proposal.baseHref;
-  }
-
-  await inlineAllRasterImages(wrapper, warnings, rasterOptions);
+  await inlineAllRasterImages(wrapper, warnings, buildRasterOptionsFromProposal(proposal));
 
   const fontFamily = brand.fontFamily || FALLBACK_FONT_FAMILY;
   const emailBody = wrapper.innerHTML;
-  const html = [
+  return [
     '<!doctype html><html><head><meta charset="utf-8">',
     '<meta http-equiv="x-ua-compatible" content="ie=edge">',
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
@@ -1028,6 +1027,67 @@ async function buildEmailExportHTML(proposal) {
     emailBody,
     '</body></html>'
   ].join('');
+}
+
+async function buildPreviewMirroredEmailHTML(proposal, warnings) {
+  const doc = typeof document !== 'undefined' ? document : null;
+  const hasDom = doc && typeof doc.getElementById === 'function' && typeof doc.createElement === 'function';
+  if (!hasDom) {
+    return null;
+  }
+  const preview = doc.getElementById('preview-export');
+  if (!preview) {
+    return null;
+  }
+
+  const clone = preview.cloneNode(true);
+  inlineComputedStylesTree(preview, clone, doc);
+  ensureCommercialTermsSpacing(clone);
+
+  const rect = typeof preview.getBoundingClientRect === 'function'
+    ? preview.getBoundingClientRect()
+    : null;
+  const width = rect && Number.isFinite(rect.width) && rect.width > 0 ? Math.round(rect.width) : null;
+  const styles = {
+    display: 'block',
+    margin: '0 auto',
+  };
+  if (width) {
+    styles.width = `${width}px`;
+    styles['max-width'] = `${width}px`;
+  } else {
+    styles['max-width'] = '100%';
+  }
+  mergeStyleDeclarations(clone, styles);
+
+  const wrapper = doc.createElement('div');
+  wrapper.appendChild(clone);
+
+  await inlineAllRasterImages(wrapper, warnings, buildRasterOptionsFromProposal(proposal));
+
+  return buildPreviewHtmlDocument(doc, clone, proposal);
+}
+
+async function buildEmailExportHTML(proposal) {
+  if (!proposal || typeof proposal !== 'object') {
+    throw new Error('A proposal object is required');
+  }
+  const warnings = [];
+
+  let html = null;
+  try {
+    html = await buildPreviewMirroredEmailHTML(proposal, warnings);
+  } catch (error) {
+    warnings.push(`Preview export unavailable: ${error?.message || error}`);
+  }
+
+  if (!html) {
+    html = await buildLegacyEmailExportHTML(proposal, warnings);
+  }
+
+  if (!html) {
+    throw new Error('Unable to generate email export HTML');
+  }
 
   let sizeKB = 0;
   if (typeof Blob === 'function') {
@@ -1904,6 +1964,9 @@ if (typeof module !== 'undefined' && module.exports) {
       buildTextFallbackFromProposal,
       buildEmailMetadata,
       generatePreviewEmailPackage,
+      buildPreviewMirroredEmailHTML,
+      buildLegacyEmailExportHTML,
+      collectPreviewProposal,
     },
   };
 }
