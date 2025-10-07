@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
+const { JSDOM } = require('jsdom');
 
 const {
   parseSize,
@@ -952,6 +953,121 @@ test('email export inlines HTTPS pictogram icons as data URIs', async () => {
       delete global.getComputedStyle;
     } else {
       global.getComputedStyle = originalGetComputedStyle;
+    }
+    if (originalFetch === undefined) {
+      delete global.fetch;
+    } else {
+      global.fetch = originalFetch;
+    }
+    if (originalFileReader === undefined) {
+      delete global.FileReader;
+    } else {
+      global.FileReader = originalFileReader;
+    }
+  }
+});
+
+test('preview email export mirrors preview layout with inline images', async () => {
+  const { __private: emailExportPrivate } = require('../js/emailExport.js');
+  const originalDocument = global.document;
+  const originalWindow = global.window;
+  const originalGetComputedStyle = global.getComputedStyle;
+  const originalImage = global.Image;
+  const originalFetch = global.fetch;
+  const originalFileReader = global.FileReader;
+
+  const dom = new JSDOM(`<!DOCTYPE html>
+    <html>
+      <body>
+        <div id="tab-preview" style="padding:32px; background:#f5f6fa;">
+          <div id="preview-export" style="width:760px; background:#ffffff; padding:32px; border-radius:24px; box-shadow:0 12px 32px rgba(11,18,32,0.12);">
+            <img data-export="banner-image" src="https://cdn.example.com/banner.png" alt="Banner" style="width:100%; height:auto; display:block; border-radius:20px;">
+            <div data-export="headline-main" style="font-size:28px; font-weight:700; margin-top:18px;">Preview Headline</div>
+            <div data-export="exec-summary" style="margin-top:12px; font-size:16px; color:#5b6573;">Concise overview content.</div>
+            <ul data-export="key-benefits" style="margin:18px 0 0 20px; font-size:16px; color:#0b1220;">
+              <li>Reliable service</li>
+            </ul>
+            <div data-export="price-card" style="margin-top:24px; padding:24px; background:#f3f4f9; border-radius:16px;">
+              <div data-export="price-amount" style="font-size:30px; font-weight:700;">A$100.00 ex GST</div>
+            </div>
+          </div>
+        </div>
+      </body>
+    </html>`, {
+    url: 'https://example.com/app/index.html',
+    pretendToBeVisual: true,
+  });
+
+  global.window = dom.window;
+  global.document = dom.window.document;
+  global.getComputedStyle = dom.window.getComputedStyle.bind(dom.window);
+  global.Image = dom.window.Image;
+
+  const fetchedUrls = [];
+  global.fetch = async (url) => {
+    fetchedUrls.push(url);
+    return {
+      ok: true,
+      async blob() {
+        return { type: 'image/png' };
+      },
+    };
+  };
+
+  class StubFileReader {
+    constructor() {
+      this.result = '';
+      this.onload = null;
+      this.onerror = null;
+    }
+
+    readAsDataURL(blob) {
+      if (!blob) {
+        if (typeof this.onerror === 'function') {
+          this.onerror(new Error('Missing blob'));
+        }
+        return;
+      }
+      const mime = blob.type || 'image/png';
+      this.result = `data:${mime};base64,stub-preview`;
+      if (typeof this.onload === 'function') {
+        this.onload();
+      }
+    }
+  }
+
+  global.FileReader = StubFileReader;
+
+  try {
+    const proposal = emailExportPrivate.collectPreviewProposal(dom.window.document);
+    proposal.baseHref = dom.window.document.baseURI;
+
+    const result = await emailExportPrivate.buildEmailExportHTML(proposal);
+
+    assert.ok(result.html.includes('Preview Headline'));
+    assert.ok(result.html.includes('id="preview-export"'));
+    assert.ok(result.html.includes('data:image/png;base64,stub-preview'));
+    assert.deepEqual(fetchedUrls, ['https://cdn.example.com/banner.png']);
+  } finally {
+    if (originalDocument === undefined) {
+      delete global.document;
+    } else {
+      global.document = originalDocument;
+    }
+    if (originalWindow === undefined) {
+      delete global.window;
+    } else {
+      global.window = originalWindow;
+    }
+    if (originalGetComputedStyle === undefined) {
+      delete global.getComputedStyle;
+    } else {
+      global.getComputedStyle = originalGetComputedStyle;
+    }
+    if (originalImage === undefined) {
+      delete global.Image;
+    } else {
+      global.Image = originalImage;
     }
     if (originalFetch === undefined) {
       delete global.fetch;

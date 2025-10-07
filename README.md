@@ -6,7 +6,8 @@ It preserves your styling, branding, fonts (embedded if provided), and adds the 
 
 ## Highlights
 - Tabs: Banner, Executive Summary, Key Benefits, Features, Pricing, Preview/Export.
-- **Email export HTML** mirrors Preview, with **one Ref** field, shaded **price card** matching preview, and **Commercial terms & dependencies** (one per line).
+- **Email export HTML** now clones the Preview layout so the downloaded markup is pixel-aligned, including the **Ref** field, shaded **price card**, and **Commercial terms & dependencies** (one per line).
+- Images in the exported HTML are inlined as data URIs so they continue to render when the markup is pasted directly into email clients.
 - **Print (A4)** uses page logic suitable for two pages: page 1 visual sections, page 2 benefits & pricing (controlled by CSS page breaks).
 - **Features page fix**: no overlapping controls; grid layout; icons keep aspect ratio; sliders resize live; HERO images can scale larger than standard.
 - **Logo sync**: logo upload updates banner, preview and all exports.
