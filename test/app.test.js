@@ -967,6 +967,89 @@ test('email export inlines HTTPS pictogram icons as data URIs', async () => {
   }
 });
 
+test('email export falls back to assetKey data URIs when file assets cannot be inlined', async () => {
+  const { __private: emailExportPrivate } = require('../js/emailExport.js');
+  const originalDocument = global.document;
+  const originalWindow = global.window;
+  const originalImage = global.Image;
+  const originalGetComputedStyle = global.getComputedStyle;
+  const originalIconDataUris = global.__ICON_DATA_URIS__;
+
+  const mockDocument = new EmailExportMockDocument('file:///Users/test/offline.html');
+  global.document = mockDocument;
+  global.window = {
+    getComputedStyle() {
+      return {
+        backgroundImage: 'none',
+        backgroundColor: 'transparent',
+      };
+    },
+  };
+  global.getComputedStyle = global.window.getComputedStyle;
+
+  class FailingImage extends EmailExportMockImage {
+    async decode() {
+      throw new Error('decode failed');
+    }
+  }
+
+  global.Image = FailingImage;
+  global.__ICON_DATA_URIS__ = {
+    'pictoOffline.png': 'data:image/png;base64,fallback-inline',
+  };
+
+  try {
+    const proposal = {
+      brand: {},
+      features: [
+        {
+          title: 'Offline Icon',
+          description: 'Bundled pictogram',
+          image: {
+            src: 'file:///Users/test/assets/pictoOffline.png',
+            alt: 'Offline icon',
+            width: 72,
+            height: 72,
+            assetKey: 'pictoOffline.png',
+          },
+        },
+      ],
+      baseHref: 'file:///Users/test/offline.html',
+    };
+
+    const result = await emailExportPrivate.buildEmailExportHTML(proposal);
+    assert.ok(result.html.includes('data:image/png;base64,fallback-inline'));
+    assert.ok(!result.html.includes('file:///Users/test/assets/pictoOffline.png'));
+    assert.ok(result.html.includes('data-asset-key="pictoOffline.png"'));
+  } finally {
+    if (originalDocument === undefined) {
+      delete global.document;
+    } else {
+      global.document = originalDocument;
+    }
+    if (originalWindow === undefined) {
+      delete global.window;
+    } else {
+      global.window = originalWindow;
+    }
+    if (originalImage === undefined) {
+      delete global.Image;
+    } else {
+      global.Image = originalImage;
+    }
+    if (originalGetComputedStyle === undefined) {
+      delete global.getComputedStyle;
+    } else {
+      global.getComputedStyle = originalGetComputedStyle;
+    }
+    if (originalIconDataUris === undefined) {
+      delete global.__ICON_DATA_URIS__;
+    } else {
+      global.__ICON_DATA_URIS__ = originalIconDataUris;
+    }
+  }
+});
+
 test('email export builds enterprise layout with inline images', async () => {
   const { __private: emailExportPrivate } = require('../js/emailExport.js');
   const originalDocument = global.document;

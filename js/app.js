@@ -1606,6 +1606,7 @@ function initializeApp() {
     const titleText = feature.t ? String(feature.t).trim() : '';
     const copyText = feature.c ? String(feature.c).trim() : '';
     const iconSrc = feature.img || resolveIcon(feature.icon);
+    const assetKey = feature.img || feature.icon;
     const hasDetails = Boolean(titleText || copyText || iconSrc);
     if (!hasDetails) {
       return null;
@@ -1631,6 +1632,9 @@ function initializeApp() {
       img.src = iconSrc;
       img.alt = titleText || 'Feature icon';
       img.setAttribute('data-export-feature-image', 'icon');
+      if (assetKey) {
+        img.dataset.assetKey = assetKey;
+      }
       iconWrap.appendChild(img);
       card.appendChild(iconWrap);
     }

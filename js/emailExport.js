@@ -84,6 +84,49 @@ function mimeFromExtOrBlob(url, blob) {
   return MIME_FALLBACK;
 }
 
+function assetKeyFromElement(el) {
+  if (!el) {
+    return '';
+  }
+  const datasetValue = el.dataset?.assetKey;
+  if (datasetValue && datasetValue.trim()) {
+    return datasetValue.trim();
+  }
+  if (typeof el.getAttribute === 'function') {
+    const attrValue = el.getAttribute('data-asset-key');
+    if (attrValue && attrValue.trim()) {
+      return attrValue.trim();
+    }
+  }
+  return '';
+}
+
+function resolveIconDataUri(assetKey) {
+  if (!assetKey) {
+    return null;
+  }
+  const scope = (typeof globalThis !== 'undefined' && globalThis)
+    || (typeof window !== 'undefined' && window)
+    || (typeof self !== 'undefined' && self)
+    || null;
+  const map = scope && typeof scope.__ICON_DATA_URIS__ === 'object' ? scope.__ICON_DATA_URIS__ : null;
+  if (map && map[assetKey]) {
+    return map[assetKey];
+  }
+  return null;
+}
+
+function mimeFromDataUri(dataUri) {
+  if (!dataUri) {
+    return MIME_FALLBACK;
+  }
+  const match = /^data:([^;,]+)[;,]/i.exec(String(dataUri));
+  if (match && match[1]) {
+    return match[1];
+  }
+  return MIME_FALLBACK;
+}
+
 function toDataURLViaFileReader(blob, mimeHint) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -188,12 +231,12 @@ async function imageBlobToCanvasDataURI(blob, mimeHint) {
 }
 
 async function imgElementToDataURI(img, warnings) {
-  try {
-    const src = img.currentSrc || img.src;
-    if (!src) {
-      return null;
-    }
+  const src = img.currentSrc || img.src;
+  if (!src) {
+    return null;
+  }
 
+  try {
     if (src.startsWith('data:image/png') || src.startsWith('data:image/jpeg')) {
       return { dataUri: src, mime: src.includes('image/png') ? 'image/png' : 'image/jpeg' };
     }
@@ -220,8 +263,16 @@ async function imgElementToDataURI(img, warnings) {
     }
   } catch (error) {
     warnings.push(`IMG inline failed: ${img.alt || '[no alt]'} — ${error?.message || error}`);
-    return null;
   }
+
+  if (src.startsWith('file:')) {
+    const assetKey = assetKeyFromElement(img);
+    const dataUri = resolveIconDataUri(assetKey);
+    if (dataUri) {
+      return { dataUri, mime: mimeFromDataUri(dataUri) };
+    }
+  }
+  return null;
 }
 
 function getBaseHref() {
@@ -570,11 +621,13 @@ async function renderFeatureCard(feature, brand, warnings) {
         styleParts.push(image.css.trim().replace(/;+$/g, ''));
       }
       const styleAttr = `${styleParts.join('; ')};`;
-      rows.push(`<tr><td style="padding-bottom:12px;"><img src="${esc(imgSrc)}" alt="${esc(altText)}" width="${width}" height="${height}" style="${styleAttr}"></td></tr>`);
+      const assetAttr = image.assetKey ? ` data-asset-key="${esc(image.assetKey)}"` : '';
+      rows.push(`<tr><td style="padding-bottom:12px;"><img src="${esc(imgSrc)}" alt="${esc(altText)}" width="${width}" height="${height}" style="${styleAttr}"${assetAttr}></td></tr>`);
     } else if (image.src) {
       const width = clampWidth(image.width ?? DEFAULT_IMAGE_WIDTH);
       const altText = image.alt || feature.title || 'Feature image';
-      rows.push(`<tr><td style="padding-bottom:12px;"><img src="${esc(image.src)}" alt="${esc(altText)}" width="${width}" style="display:block; width:${width}px; max-width:100%; height:auto; border:0; outline:none; text-decoration:none;"></td></tr>`);
+      const assetAttr = image.assetKey ? ` data-asset-key="${esc(image.assetKey)}"` : '';
+      rows.push(`<tr><td style="padding-bottom:12px;"><img src="${esc(image.src)}" alt="${esc(altText)}" width="${width}" style="display:block; width:${width}px; max-width:100%; height:auto; border:0; outline:none; text-decoration:none;"${assetAttr}></td></tr>`);
     }
   }
   if (feature.title) {
@@ -729,6 +782,9 @@ async function renderBanner(banner) {
     }
     if (typeof HTMLImageElement !== 'undefined' && banner instanceof HTMLImageElement) {
       const clone = banner.cloneNode(true);
+      if (banner.dataset?.assetKey && typeof clone.setAttribute === 'function') {
+        clone.setAttribute('data-asset-key', banner.dataset.assetKey);
+      }
       clone.width = DEFAULT_EMAIL_WIDTH;
       clone.style.width = `${DEFAULT_EMAIL_WIDTH}px`;
       clone.style.height = 'auto';
@@ -738,8 +794,9 @@ async function renderBanner(banner) {
     if (banner.src) {
       const width = DEFAULT_EMAIL_WIDTH;
       const altText = banner.alt || 'Proposal banner';
+      const assetAttr = banner.assetKey ? ` data-asset-key="${esc(banner.assetKey)}"` : '';
       return `<tr><td style="padding:0;">
-    <img src="${esc(banner.src)}" alt="${esc(altText)}" width="${width}" style="display:block; width:${width}px; max-width:100%; height:auto; border:0; outline:none; text-decoration:none;">
+    <img src="${esc(banner.src)}" alt="${esc(altText)}" width="${width}" style="display:block; width:${width}px; max-width:100%; height:auto; border:0; outline:none; text-decoration:none;"${assetAttr}>
   </td></tr>`;
     }
   }
@@ -1319,10 +1376,14 @@ function collectFeaturesFromPreview(root) {
       const wrapper = imageEl.closest('.icon');
       const width = wrapper ? parsePx(wrapper.style?.width) : Number.NaN;
       const height = wrapper ? parsePx(wrapper.style?.height) : Number.NaN;
+      const assetKey = assetKeyFromElement(imageEl);
       image = {
         src: imageEl.src,
         alt: imageEl.alt || title || 'Feature image',
       };
+      if (assetKey) {
+        image.assetKey = assetKey;
+      }
       if (Number.isFinite(width) && width > 0) {
         image.width = Math.round(width);
       }
@@ -1489,10 +1550,15 @@ function capturePreviewBanner(doc) {
   }
   const img = selectFirst(doc, ['[data-export="banner-image"]', '#pageBanner', '#pageBanner2']);
   if (img && img.src) {
-    return {
+    const assetKey = assetKeyFromElement(img);
+    const banner = {
       src: img.src,
       alt: img.alt || 'Proposal banner',
     };
+    if (assetKey) {
+      banner.assetKey = assetKey;
+    }
+    return banner;
   }
   return null;
 }
