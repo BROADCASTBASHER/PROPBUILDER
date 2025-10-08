@@ -967,7 +967,7 @@ test('email export inlines HTTPS pictogram icons as data URIs', async () => {
   }
 });
 
-test('preview email export mirrors preview layout with inline images', async () => {
+test('email export builds enterprise layout with inline images', async () => {
   const { __private: emailExportPrivate } = require('../js/emailExport.js');
   const originalDocument = global.document;
   const originalWindow = global.window;
@@ -1045,7 +1045,9 @@ test('preview email export mirrors preview layout with inline images', async () 
     const result = await emailExportPrivate.buildEmailExportHTML(proposal);
 
     assert.ok(result.html.includes('Preview Headline'));
-    assert.ok(result.html.includes('id="preview-export"'));
+    assert.ok(result.html.includes('data-email-section="hero"'));
+    assert.ok(result.html.includes('data-email-card="executive-summary"'));
+    assert.ok(!result.html.includes('id="preview-export"'));
     assert.ok(result.html.includes('data:image/png;base64,stub-preview'));
     assert.deepEqual(fetchedUrls, ['https://cdn.example.com/banner.png']);
   } finally {
