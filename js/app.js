@@ -547,8 +547,11 @@ function buildFeaturesForEmail() {
   if (!Array.isArray(state.features)) {
     return [];
   }
+  const iconMap = (typeof window !== 'undefined' && window.__ICON_DATA__ && typeof window.__ICON_DATA__ === 'object')
+    ? window.__ICON_DATA__
+    : {};
   return state.features
-    .filter((feature) => feature && (feature.t || feature.c || feature.img))
+    .filter((feature) => feature && (feature.t || feature.c || feature.img || feature.icon || feature.assetKey))
     .map((feature) => {
       const title = feature.t ? String(feature.t).trim() : '';
       const copy = feature.c ? String(feature.c).trim() : '';
@@ -559,11 +562,16 @@ function buildFeaturesForEmail() {
       } else {
         description = copy;
       }
-      const image = feature.img
+      const canonicalKey = typeof feature.icon === 'string' && feature.icon
+        ? feature.icon
+        : (typeof feature.assetKey === 'string' && feature.assetKey ? feature.assetKey : null);
+      const iconSrc = feature.img || (canonicalKey && iconMap[canonicalKey] ? iconMap[canonicalKey] : '');
+      const image = iconSrc
         ? {
-            src: feature.img,
+            src: iconSrc,
             width: clampIconSizeValue(feature.size, feature.hero),
             alt: title || 'Feature image',
+            assetKey: canonicalKey || undefined,
           }
         : null;
       return {
@@ -1002,13 +1010,25 @@ function initializeApp() {
   state.pricing.monthly = monthlyInput ? (Number(monthlyInput.value) || DEFAULT_MONTHLY) : DEFAULT_MONTHLY;
   state.pricing.term = termInput ? (Number(termInput.value) || DEFAULT_TERM) : DEFAULT_TERM;
 
-  const resolveIcon = (name) => {
+  const resolveIconKey = (name, options = {}) => {
+    const { allowFallback = true } = options;
     if (name && iconMap[name]) {
-      return iconMap[name];
+      return name;
+    }
+    if (!allowFallback) {
+      return null;
     }
     const keys = Object.keys(iconMap);
     if (keys.length) {
-      return iconMap[keys[0]];
+      return keys[0];
+    }
+    return null;
+  };
+
+  const resolveIcon = (name) => {
+    const key = resolveIconKey(name);
+    if (key && iconMap[key]) {
+      return iconMap[key];
     }
     return TRANSPARENT_PNG;
   };
@@ -1087,20 +1107,37 @@ function initializeApp() {
   state.features.length = 0;
   if (Array.isArray(window._features) && window._features.length) {
     for (const feature of window._features) {
+      const requestedIcon = typeof feature.icon === 'string' && feature.icon
+        ? feature.icon
+        : (typeof feature.assetKey === 'string' && feature.assetKey
+            ? feature.assetKey
+            : (typeof feature.imgName === 'string' && feature.imgName ? feature.imgName : null));
+      const hasExplicitKey = Boolean(requestedIcon);
+      const hasCustomImage = typeof feature.img === 'string'
+        && /^data:image\//.test(feature.img)
+        && !hasExplicitKey;
+      const iconKey = resolveIconKey(requestedIcon, { allowFallback: !hasCustomImage });
       state.features.push({
         t: String(feature.t || feature.title || ""),
         c: String(feature.c || feature.copy || ""),
-        img: feature.img || feature.image || resolveIcon(feature.icon),
+        img: feature.img || feature.image || (iconKey ? resolveIcon(iconKey) : TRANSPARENT_PNG),
+        icon: iconKey || null,
+        assetKey: iconKey || null,
+        imgName: typeof feature.imgName === 'string' && feature.imgName ? feature.imgName : (iconKey || null),
         hero: Boolean(feature.hero),
         size: Number(feature.size || feature.width || 56) || 56
       });
     }
   } else {
     for (const template of FEATURE_LIBRARY) {
+      const templateIconKey = resolveIconKey(template.icon, { allowFallback: true });
       state.features.push({
         t: template.t,
         c: template.c,
-        img: resolveIcon(template.icon),
+        img: templateIconKey ? resolveIcon(templateIconKey) : TRANSPARENT_PNG,
+        icon: templateIconKey || null,
+        assetKey: templateIconKey || null,
+        imgName: templateIconKey || null,
         hero: Boolean(template.hero),
         size: Number(template.size) || 56
       });
@@ -1605,8 +1642,11 @@ function initializeApp() {
     const { forceHero = false, context = 'preview' } = options;
     const titleText = feature.t ? String(feature.t).trim() : '';
     const copyText = feature.c ? String(feature.c).trim() : '';
-    const iconSrc = feature.img || resolveIcon(feature.icon);
-    const assetKey = feature.img || feature.icon;
+    const canonicalKey = typeof feature.icon === 'string' && feature.icon
+      ? feature.icon
+      : (typeof feature.assetKey === 'string' && feature.assetKey ? feature.assetKey : null);
+    const iconSrc = feature.img || resolveIcon(canonicalKey);
+    const assetKey = canonicalKey || null;
     const hasDetails = Boolean(titleText || copyText || iconSrc);
     if (!hasDetails) {
       return null;
@@ -1858,6 +1898,8 @@ function initializeApp() {
           if (currentFeatureIndex >= 0 && state.features[currentFeatureIndex]) {
             state.features[currentFeatureIndex].img = src;
             state.features[currentFeatureIndex].imgName = name;
+            state.features[currentFeatureIndex].icon = name;
+            state.features[currentFeatureIndex].assetKey = name;
             renderFeatureGrid();
             renderFeaturePreview();
             closeIconModal();
@@ -1901,7 +1943,15 @@ function initializeApp() {
       iconWrap.style.width = `${size}px`;
       iconWrap.style.height = `${size}px`;
       const img = doc.createElement('img');
-      img.src = feature.img || resolveIcon(feature.icon);
+      const canonicalKey = typeof feature.icon === 'string' && feature.icon
+        ? feature.icon
+        : (typeof feature.assetKey === 'string' && feature.assetKey ? feature.assetKey : null);
+      img.src = feature.img || resolveIcon(canonicalKey);
+      if (canonicalKey) {
+        img.dataset.assetKey = canonicalKey;
+      } else {
+        delete img.dataset.assetKey;
+      }
       iconWrap.appendChild(img);
       left.appendChild(iconWrap);
 
@@ -2269,6 +2319,9 @@ function initializeApp() {
       reader.onload = () => {
         if (currentFeatureIndex >= 0 && state.features[currentFeatureIndex]) {
           state.features[currentFeatureIndex].img = reader.result || state.features[currentFeatureIndex].img;
+          state.features[currentFeatureIndex].icon = null;
+          state.features[currentFeatureIndex].assetKey = null;
+          state.features[currentFeatureIndex].imgName = null;
           renderFeatureGrid();
           renderFeaturePreview();
           closeIconModal();
@@ -2283,10 +2336,14 @@ function initializeApp() {
       if (state.features.length >= MAX_FEATURES) {
         return;
       }
+      const defaultIconKey = resolveIconKey(null, { allowFallback: true });
       state.features.push({
         t: "New feature",
         c: "Describe the benefit...",
-        img: resolveIcon(),
+        img: defaultIconKey ? resolveIcon(defaultIconKey) : TRANSPARENT_PNG,
+        icon: defaultIconKey || null,
+        assetKey: defaultIconKey || null,
+        imgName: defaultIconKey || null,
         hero: false,
         size: 56
       });
