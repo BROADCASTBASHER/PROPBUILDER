@@ -6,6 +6,11 @@ const FALLBACK_FONT_FAMILY = '-apple-system, Segoe UI, Roboto, Arial, sans-serif
 const EMAIL_BODY_BACKGROUND = '#FAF7F3';
 const EMAIL_BODY_TEXT_COLOR = '#0B1220';
 const EMAIL_BODY_FONT_STACK = "'TelstraText', Arial, sans-serif";
+const EMAIL_SURFACE_RADIUS = 24;
+const EMAIL_SECTION_HORIZONTAL_PADDING = 28;
+const EMAIL_SECTION_BOTTOM_PADDING = 28;
+const EMAIL_HERO_TOP_PADDING = 28;
+const EMAIL_HERO_BOTTOM_PADDING = 24;
 
 const INLINE_STYLE_PROPERTIES = [
   'align-content', 'align-items', 'align-self', 'background', 'background-attachment', 'background-blend-mode',
@@ -49,6 +54,11 @@ function clampWidth(width) {
     return Math.min(DEFAULT_IMAGE_WIDTH, EMAIL_MAX_WIDTH);
   }
   return Math.min(Math.max(24, Math.round(width)), EMAIL_MAX_WIDTH);
+}
+
+function buildSectionPadding({ top = 0, bottom = EMAIL_SECTION_BOTTOM_PADDING } = {}) {
+  const horizontal = EMAIL_SECTION_HORIZONTAL_PADDING;
+  return `${top}px ${horizontal}px ${bottom}px ${horizontal}px`;
 }
 
 const MIME_FALLBACK = 'image/png';
@@ -750,10 +760,10 @@ async function buildFeatureSection(features, heading, brand, warnings, options =
   const cardsTable = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" data-email-grid="${esc(sectionId)}" style="width:100%; border-spacing:0;">${rows.join('\n')}</table>`;
   const headingHtml = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%; border-spacing:0;">
     <tr>
-      <td style="font-family:${esc(fontFamily)}; font-size:22px; font-weight:700; color:${esc(headingColor)};">${esc(heading)}</td>
+      <td style="font-family:${esc(fontFamily)}; font-size:24px; font-weight:700; color:${esc(headingColor)};">${esc(heading)}</td>
     </tr>
   </table>`;
-  return `<tr data-email-section="${esc(sectionId)}"><td style="padding:0 32px 32px 32px;">
+  return `<tr data-email-section="${esc(sectionId)}"><td style="padding:${buildSectionPadding()};">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%; border-spacing:0;">
       <tr><td>${headingHtml}</td></tr>
       <tr><td style="padding-top:16px;">${cardsTable}</td></tr>
@@ -816,11 +826,11 @@ function buildHeaderSection(proposal, brand) {
   // reference displayed as badge below; omit from headlineParts to avoid duplication
 
   const headerLine = headlineParts.length
-    ? `<tr><td style="font-family:${esc(fontFamily)}; font-size:18px; line-height:1.45; font-weight:600; color:${esc(bodyColor)};">${headlineParts.join(' • ')}</td></tr>`
+    ? `<tr><td style="font-family:${esc(fontFamily)}; font-size:20px; line-height:1.4; font-weight:600; color:${esc(bodyColor)};">${headlineParts.join(' • ')}</td></tr>`
     : '';
 
   const mainHeadline = proposal.headlineMain
-    ? `<tr><td style="padding-top:${headerLine ? 20 : 0}px; font-family:${esc(fontFamily)}; font-size:30px; line-height:1.2; font-weight:600; color:${esc(headingColor)};">${esc(proposal.headlineMain)}</td></tr>`
+    ? `<tr><td style="padding-top:${headerLine ? 20 : 0}px; font-family:${esc(fontFamily)}; font-size:28px; line-height:1.2; font-weight:600; color:${esc(headingColor)};">${esc(proposal.headlineMain)}</td></tr>`
     : '';
 
   const subPaddingTop = proposal.headlineMain ? 10 : (headerLine ? 20 : 0);
@@ -832,14 +842,14 @@ function buildHeaderSection(proposal, brand) {
     ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="display:inline-block; border-radius:999px; background-color:rgba(17, 32, 65, 0.08);"><tr><td style="padding:6px 14px; font-family:${esc(fontFamily)}; font-size:12px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:${esc(eyebrow)};">Ref: ${esc(proposal.ref)}</td></tr></table>`
     : '';
 
-  const badgeRow = badge ? `<tr><td style="padding-top:14px;">${badge}</td></tr>` : '';
+  const badgeRow = badge ? `<tr><td style="padding-top:16px;">${badge}</td></tr>` : '';
 
   const rows = [headerLine, mainHeadline, subheadline, badgeRow].filter(Boolean).join('\n');
   if (!rows) {
     return '';
   }
 
-  return `<tr data-email-section="hero"><td style="padding:32px 32px 28px 32px;">
+  return `<tr data-email-section="hero"><td style="padding:${buildSectionPadding({ top: EMAIL_HERO_TOP_PADDING, bottom: EMAIL_HERO_BOTTOM_PADDING })};">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%; border-spacing:0;">
       ${rows}
     </table>
@@ -901,10 +911,10 @@ function renderOverviewSection(proposal, brand) {
     return '';
   }
   if (cards.length === 1) {
-    return `<tr data-email-section="overview"><td style="padding:0 32px 32px 32px;">${cards[0]}</td></tr>`;
+    return `<tr data-email-section="overview"><td style="padding:${buildSectionPadding()};">${cards[0]}</td></tr>`;
   }
   const [firstCard, secondCard] = cards;
-  return `<tr data-email-section="overview"><td style="padding:0 32px 32px 32px;">
+  return `<tr data-email-section="overview"><td style="padding:${buildSectionPadding()};">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%; border-spacing:0;">
       <tr>
         <td valign="top" style="padding:0 12px 0 0; width:50%;">${firstCard}</td>
@@ -921,7 +931,7 @@ function renderPricingTable(html, brand) {
   const sanitized = sanitizeHTML(html);
   const fontFamily = brand.fontFamily || FALLBACK_FONT_FAMILY;
   const eyebrow = brand.colorMuted || '#6B6F76';
-  return `<tr data-email-section="pricing"><td style="padding:0 32px 32px 32px;">
+  return `<tr data-email-section="pricing"><td style="padding:${buildSectionPadding()};">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" data-email-card="pricing-breakdown" style="width:100%; border:1px solid rgba(11,18,32,0.08); border-radius:16px; background-color:#FFFFFF;">
       <tr>
         <td style="padding:24px;">
@@ -1079,10 +1089,10 @@ function renderInvestmentSection(priceCard, commercialTerms, brand) {
     return '';
   }
   if (blocks.length === 1) {
-    return `<tr data-email-section="investment"><td style="padding:0 32px 32px 32px;">${blocks[0]}</td></tr>`;
+    return `<tr data-email-section="investment"><td style="padding:${buildSectionPadding()};">${blocks[0]}</td></tr>`;
   }
   const [firstBlock, secondBlock] = blocks;
-  return `<tr data-email-section="investment"><td style="padding:0 32px 32px 32px;">
+  return `<tr data-email-section="investment"><td style="padding:${buildSectionPadding()};">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%; border-spacing:0;">
       <tr>
         <td valign="top" style="padding:0 12px 0 0; width:50%;">${firstBlock}</td>
@@ -1095,7 +1105,7 @@ function renderInvestmentSection(priceCard, commercialTerms, brand) {
 function buildOuterWrapper(content, brand) {
   const background = EMAIL_BODY_BACKGROUND;
   const borderColor = 'rgba(11,18,32,0.08)';
-  const surfaceRadius = 28;
+  const surfaceRadius = EMAIL_SURFACE_RADIUS;
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%; background-color:${esc(background)};">
       <tr>
         <td align="center" style="padding:32px 16px;">
@@ -1173,7 +1183,7 @@ async function buildLegacyEmailExportHTML(proposal, warnings) {
 
   const dataSourcesHtml = renderDataSourcesSection(proposal.dataSources, brand);
   if (dataSourcesHtml) {
-    contentParts.push(`<tr data-email-section="data-sources"><td style="padding:0 32px 32px 32px;">${dataSourcesHtml}</td></tr>`);
+    contentParts.push(`<tr data-email-section="data-sources"><td style="padding:${buildSectionPadding()};">${dataSourcesHtml}</td></tr>`);
   }
 
   const content = contentParts.filter(Boolean).join('\n');
