@@ -1278,16 +1278,53 @@ function initializeApp() {
     });
   };
 
+  const bannerImageTargets = (() => {
+    const targets = [];
+    const seen = new Set();
+    const addTarget = (el) => {
+      if (!el || seen.has(el)) {
+        return;
+      }
+      seen.add(el);
+      targets.push(el);
+    };
+    if (doc && typeof doc.querySelectorAll === 'function') {
+      doc.querySelectorAll('img[data-export="banner-image"]').forEach(addTarget);
+    }
+    addTarget(pageBanner);
+    addTarget(previewHeroImg);
+    return targets;
+  })();
+
+  const updateBannerImageTargets = (src) => {
+    bannerImageTargets.forEach((img) => {
+      if (!img) {
+        return;
+      }
+      if (typeof src === 'string' && src) {
+        img.src = src;
+        if (typeof img.removeAttribute === 'function') {
+          img.removeAttribute('data-empty-banner');
+        }
+        if ('hidden' in img) {
+          img.hidden = false;
+        }
+        if (img.style && typeof img.style.removeProperty === 'function') {
+          img.style.removeProperty('display');
+        }
+      } else if (!img.src) {
+        if (typeof img.setAttribute === 'function') {
+          img.setAttribute('data-empty-banner', '');
+        }
+      }
+    });
+  };
+
   let lastBannerSnapshot = null;
   const pushBannerToPreview = () => {
     if (!bannerCanvas || typeof bannerCanvas.toDataURL !== "function") {
       if (lastBannerSnapshot) {
-        if (pageBanner) {
-          pageBanner.src = lastBannerSnapshot;
-        }
-        if (previewHeroImg) {
-          previewHeroImg.src = lastBannerSnapshot;
-        }
+        updateBannerImageTargets(lastBannerSnapshot);
       }
       return;
     }
@@ -1301,21 +1338,11 @@ function initializeApp() {
     }
     if (typeof dataUrl === 'string' && dataUrl.startsWith('data:image/png')) {
       lastBannerSnapshot = dataUrl;
-      if (pageBanner) {
-        pageBanner.src = dataUrl;
-      }
-      if (previewHeroImg) {
-        previewHeroImg.src = dataUrl;
-      }
+      updateBannerImageTargets(dataUrl);
       return;
     }
     if (lastBannerSnapshot) {
-      if (pageBanner) {
-        pageBanner.src = lastBannerSnapshot;
-      }
-      if (previewHeroImg) {
-        previewHeroImg.src = lastBannerSnapshot;
-      }
+      updateBannerImageTargets(lastBannerSnapshot);
     }
   };
 
