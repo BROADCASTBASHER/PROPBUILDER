@@ -2,6 +2,8 @@ const EMAIL_MAX_WIDTH = 600;
 const DEFAULT_EMAIL_WIDTH = EMAIL_MAX_WIDTH;
 const DEFAULT_IMAGE_WIDTH = 320;
 const DEFAULT_IMAGE_HEIGHT = 180;
+const EMAIL_FEATURE_IMAGE_MAX_WIDTH = 220;
+const EMAIL_FEATURE_IMAGE_MAX_HEIGHT = 160;
 const FALLBACK_FONT_FAMILY = '-apple-system, Segoe UI, Roboto, Arial, sans-serif';
 const EMAIL_BODY_BACKGROUND = '#FAF7F3';
 const EMAIL_BODY_TEXT_COLOR = '#0B1220';
@@ -91,6 +93,17 @@ function clampWidth(width) {
     return Math.min(DEFAULT_IMAGE_WIDTH, EMAIL_MAX_WIDTH);
   }
   return Math.min(Math.max(24, Math.round(width)), EMAIL_MAX_WIDTH);
+}
+
+function clampFeatureImageWidth(width) {
+  return Math.min(clampWidth(width), EMAIL_FEATURE_IMAGE_MAX_WIDTH);
+}
+
+function clampFeatureImageHeight(height) {
+  if (!Number.isFinite(height) || height <= 0) {
+    return EMAIL_FEATURE_IMAGE_MAX_HEIGHT;
+  }
+  return Math.min(Math.max(32, Math.round(height)), EMAIL_FEATURE_IMAGE_MAX_HEIGHT);
 }
 
 function buildSectionPadding({ top = 0, bottom = EMAIL_SECTION_BOTTOM_PADDING } = {}) {
@@ -643,8 +656,8 @@ async function renderFeatureCard(feature, brand, warnings) {
   const image = feature?.image;
   if (image) {
     if ((image.kind === 'css-bg' || image.background === true) && (image.css || image.src)) {
-      const width = clampWidth(image.width ?? DEFAULT_IMAGE_WIDTH);
-      const height = Math.max(32, Math.round(image.height ?? DEFAULT_IMAGE_HEIGHT));
+      const width = clampFeatureImageWidth(image.width ?? DEFAULT_IMAGE_WIDTH);
+      const height = clampFeatureImageHeight(image.height ?? DEFAULT_IMAGE_HEIGHT);
       let imgSrc = image.src || '';
       if (!imgSrc && image.css) {
         const match = image.css.match(/background-image\s*:\s*url\((['"]?)([^'")]+)\1\)/i);
@@ -671,7 +684,7 @@ async function renderFeatureCard(feature, brand, warnings) {
       const assetAttr = image.assetKey ? ` data-asset-key="${esc(image.assetKey)}"` : '';
       rows.push(`<tr><td style="padding-bottom:12px;"><img src="${esc(imgSrc)}" alt="${esc(altText)}" width="${width}" height="${height}" style="${styleAttr}"${assetAttr}></td></tr>`);
     } else if (image.src) {
-      const width = clampWidth(image.width ?? DEFAULT_IMAGE_WIDTH);
+      const width = clampFeatureImageWidth(image.width ?? DEFAULT_IMAGE_WIDTH);
       const altText = image.alt || feature.title || 'Feature image';
       const assetAttr = image.assetKey ? ` data-asset-key="${esc(image.assetKey)}"` : '';
       rows.push(`<tr><td style="padding-bottom:12px;"><img src="${esc(image.src)}" alt="${esc(altText)}" width="${width}" style="display:block; width:${width}px; max-width:100%; height:auto; border:0; outline:none; text-decoration:none;"${assetAttr}></td></tr>`);
