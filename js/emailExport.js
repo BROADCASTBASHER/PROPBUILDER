@@ -1468,6 +1468,83 @@ function parsePx(value) {
   return Number.parseFloat(match[1]);
 }
 
+function collectDimensionCandidates(element, dimension) {
+  if (!element) {
+    return [];
+  }
+  const candidates = [];
+  const attrName = dimension === 'height' ? 'height' : 'width';
+  const naturalProp = dimension === 'height' ? 'naturalHeight' : 'naturalWidth';
+
+  const styleValue = element.style ? element.style[attrName] : undefined;
+  if (styleValue) {
+    candidates.push(styleValue);
+  }
+
+  if (typeof element.getAttribute === 'function') {
+    const attrValue = element.getAttribute(attrName);
+    if (attrValue) {
+      candidates.push(attrValue);
+    }
+  }
+
+  const directValue = element[attrName];
+  if (Number.isFinite(directValue) && directValue > 0) {
+    candidates.push(directValue);
+  }
+
+  const naturalValue = element[naturalProp];
+  if (Number.isFinite(naturalValue) && naturalValue > 0) {
+    candidates.push(naturalValue);
+  }
+
+  const doc = element.ownerDocument;
+  const view = doc && doc.defaultView ? doc.defaultView : (typeof window !== 'undefined' ? window : null);
+  if (view && typeof view.getComputedStyle === 'function') {
+    try {
+      const computed = view.getComputedStyle(element);
+      if (computed) {
+        const computedValue = computed.getPropertyValue(attrName);
+        if (computedValue) {
+          candidates.push(computedValue);
+        }
+      }
+    } catch (error) {
+      // ignore style resolution failures
+    }
+  }
+
+  if (typeof element.getBoundingClientRect === 'function') {
+    try {
+      const rect = element.getBoundingClientRect();
+      if (rect) {
+        const rectValue = dimension === 'height' ? rect.height : rect.width;
+        if (Number.isFinite(rectValue) && rectValue > 0) {
+          candidates.push(rectValue);
+        }
+      }
+    } catch (error) {
+      // ignore DOM measurement failures
+    }
+  }
+
+  return candidates;
+}
+
+function resolveDimensionFromElements(elements, dimension) {
+  const list = Array.isArray(elements) ? elements : [elements];
+  for (const element of list) {
+    const candidates = collectDimensionCandidates(element, dimension);
+    for (const candidate of candidates) {
+      const numeric = parsePx(candidate);
+      if (Number.isFinite(numeric) && numeric > 0) {
+        return Math.round(numeric);
+      }
+    }
+  }
+  return Number.NaN;
+}
+
 function collectFeaturesFromPreview(root) {
   if (!root) {
     return [];
@@ -1491,8 +1568,6 @@ function collectFeaturesFromPreview(root) {
     let image = null;
     if (imageEl && imageEl.src) {
       const wrapper = imageEl.closest('.icon');
-      const width = wrapper ? parsePx(wrapper.style?.width) : Number.NaN;
-      const height = wrapper ? parsePx(wrapper.style?.height) : Number.NaN;
       const assetKey = assetKeyFromElement(imageEl);
       image = {
         src: imageEl.src,
@@ -1501,11 +1576,13 @@ function collectFeaturesFromPreview(root) {
       if (assetKey) {
         image.assetKey = assetKey;
       }
+      const width = resolveDimensionFromElements([wrapper, imageEl], 'width');
+      const height = resolveDimensionFromElements([wrapper, imageEl], 'height');
       if (Number.isFinite(width) && width > 0) {
-        image.width = Math.round(width);
+        image.width = width;
       }
       if (Number.isFinite(height) && height > 0) {
-        image.height = Math.round(height);
+        image.height = height;
       }
     }
 
