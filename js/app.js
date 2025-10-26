@@ -1598,6 +1598,10 @@ function initializeApp() {
     bannerCtx.textBaseline = "top";
     wrapTextLines(bannerCtx, state.banner.text || "", textX, textY, textMaxWidth, Math.round(fontSize * 1.12), maxLines);
 
+    // Capture an early snapshot so the preview tab isn't left blank while
+    // asynchronous logo/image loads finish rendering on the banner canvas.
+    pushBannerToPreview();
+
     if (hasRenderableLogo) {
       const logoImage = new Image();
       logoImage.decoding = 'async';

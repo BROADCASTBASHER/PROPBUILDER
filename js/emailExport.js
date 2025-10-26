@@ -783,9 +783,13 @@ async function buildFeatureSection(features, heading, brand, warnings, options =
       const card = cards[index + column];
       const isLastColumn = column === columns - 1;
       const isOnlyColumn = columns === 1;
+      const isLastRow = index + columns >= cards.length;
       const paddingLeft = column === 0 ? 0 : 12;
       const paddingRight = isLastColumn ? 0 : 12;
-      const padding = isOnlyColumn ? '0 0 24px 0' : `0 ${paddingRight}px 24px ${paddingLeft}px`;
+      const bottomPadding = isLastRow ? 0 : 24;
+      const padding = isOnlyColumn
+        ? `0 0 ${bottomPadding}px 0`
+        : `0 ${paddingRight}px ${bottomPadding}px ${paddingLeft}px`;
       if (card) {
         cells.push(`<td valign="top" style="width:${Math.floor(100 / columns)}%; padding:${padding};">${card}</td>`);
       } else {
@@ -950,13 +954,15 @@ function renderOverviewSection(proposal, brand) {
   if (cards.length === 1) {
     return `<tr data-email-section="overview"><td style="padding:${buildSectionPadding()};">${cards[0]}</td></tr>`;
   }
-  const [firstCard, secondCard] = cards;
+  const stacked = cards
+    .map((card, index) => {
+      const topPadding = index === 0 ? 0 : 16;
+      return `<tr><td style="padding:${topPadding}px 0 0 0;">${card}</td></tr>`;
+    })
+    .join('');
   return `<tr data-email-section="overview"><td style="padding:${buildSectionPadding()};">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%; border-spacing:0;">
-      <tr>
-        <td valign="top" style="padding:0 12px 0 0; width:50%;">${firstCard}</td>
-        <td valign="top" style="padding:0 0 0 12px; width:50%;">${secondCard}</td>
-      </tr>
+      ${stacked}
     </table>
   </td></tr>`;
 }
@@ -1223,7 +1229,7 @@ class EmailEnterpriseLayout {
     if (!standard.length) {
       return '';
     }
-    return buildFeatureSection(standard, 'Features & benefits', this.brand, this.warnings, { columns: 2, sectionId: 'features' });
+    return buildFeatureSection(standard, 'Features & benefits', this.brand, this.warnings, { columns: 1, sectionId: 'features' });
   }
 
   async renderHeroFeatures() {
