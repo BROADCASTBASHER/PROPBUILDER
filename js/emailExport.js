@@ -2,8 +2,10 @@ const EMAIL_MAX_WIDTH = 600;
 const DEFAULT_EMAIL_WIDTH = EMAIL_MAX_WIDTH;
 const DEFAULT_IMAGE_WIDTH = 320;
 const DEFAULT_IMAGE_HEIGHT = 180;
-const EMAIL_FEATURE_IMAGE_MAX_WIDTH = 220;
-const EMAIL_FEATURE_IMAGE_MAX_HEIGHT = 160;
+const EMAIL_FEATURE_STANDARD_IMAGE_MAX_WIDTH = 140;
+const EMAIL_FEATURE_STANDARD_IMAGE_MAX_HEIGHT = 120;
+const EMAIL_FEATURE_HERO_IMAGE_MAX_WIDTH = 220;
+const EMAIL_FEATURE_HERO_IMAGE_MAX_HEIGHT = 160;
 const FALLBACK_FONT_FAMILY = '-apple-system, Segoe UI, Roboto, Arial, sans-serif';
 const EMAIL_BODY_BACKGROUND = '#FAF7F3';
 const EMAIL_BODY_TEXT_COLOR = '#0B1220';
@@ -95,15 +97,17 @@ function clampWidth(width) {
   return Math.min(Math.max(24, Math.round(width)), EMAIL_MAX_WIDTH);
 }
 
-function clampFeatureImageWidth(width) {
-  return Math.min(clampWidth(width), EMAIL_FEATURE_IMAGE_MAX_WIDTH);
+function clampFeatureImageWidth(width, { isHero } = {}) {
+  const maxWidth = isHero ? EMAIL_FEATURE_HERO_IMAGE_MAX_WIDTH : EMAIL_FEATURE_STANDARD_IMAGE_MAX_WIDTH;
+  return Math.min(clampWidth(width), maxWidth);
 }
 
-function clampFeatureImageHeight(height) {
+function clampFeatureImageHeight(height, { isHero } = {}) {
+  const maxHeight = isHero ? EMAIL_FEATURE_HERO_IMAGE_MAX_HEIGHT : EMAIL_FEATURE_STANDARD_IMAGE_MAX_HEIGHT;
   if (!Number.isFinite(height) || height <= 0) {
-    return EMAIL_FEATURE_IMAGE_MAX_HEIGHT;
+    return maxHeight;
   }
-  return Math.min(Math.max(32, Math.round(height)), EMAIL_FEATURE_IMAGE_MAX_HEIGHT);
+  return Math.min(Math.max(32, Math.round(height)), maxHeight);
 }
 
 function buildSectionPadding({ top = 0, bottom = EMAIL_SECTION_BOTTOM_PADDING } = {}) {
@@ -654,10 +658,11 @@ async function renderFeatureCard(feature, brand, warnings) {
   const titleColor = brand?.colorHeading || '#222222';
   const rows = [];
   const image = feature?.image;
+  const isHero = Boolean(feature?.isHero);
   if (image) {
     if ((image.kind === 'css-bg' || image.background === true) && (image.css || image.src)) {
-      const width = clampFeatureImageWidth(image.width ?? DEFAULT_IMAGE_WIDTH);
-      const height = clampFeatureImageHeight(image.height ?? DEFAULT_IMAGE_HEIGHT);
+      const width = clampFeatureImageWidth(image.width ?? DEFAULT_IMAGE_WIDTH, { isHero });
+      const height = clampFeatureImageHeight(image.height ?? DEFAULT_IMAGE_HEIGHT, { isHero });
       let imgSrc = image.src || '';
       if (!imgSrc && image.css) {
         const match = image.css.match(/background-image\s*:\s*url\((['"]?)([^'")]+)\1\)/i);
@@ -684,7 +689,7 @@ async function renderFeatureCard(feature, brand, warnings) {
       const assetAttr = image.assetKey ? ` data-asset-key="${esc(image.assetKey)}"` : '';
       rows.push(`<tr><td style="padding-bottom:12px;"><img src="${esc(imgSrc)}" alt="${esc(altText)}" width="${width}" height="${height}" style="${styleAttr}"${assetAttr}></td></tr>`);
     } else if (image.src) {
-      const width = clampFeatureImageWidth(image.width ?? DEFAULT_IMAGE_WIDTH);
+      const width = clampFeatureImageWidth(image.width ?? DEFAULT_IMAGE_WIDTH, { isHero });
       const altText = image.alt || feature.title || 'Feature image';
       const assetAttr = image.assetKey ? ` data-asset-key="${esc(image.assetKey)}"` : '';
       rows.push(`<tr><td style="padding-bottom:12px;"><img src="${esc(image.src)}" alt="${esc(altText)}" width="${width}" style="display:block; width:${width}px; max-width:100%; height:auto; border:0; outline:none; text-decoration:none;"${assetAttr}></td></tr>`);
