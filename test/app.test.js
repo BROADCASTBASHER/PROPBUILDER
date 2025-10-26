@@ -1053,6 +1053,78 @@ test('email export falls back to assetKey data URIs when file assets cannot be i
   }
 });
 
+test('email export preserves clamped feature icon dimensions when inlining', async () => {
+  const { __private: emailExportPrivate } = require('../js/emailExport.js');
+  const originalDocument = global.document;
+  const originalWindow = global.window;
+  const originalImage = global.Image;
+  const originalGetComputedStyle = global.getComputedStyle;
+
+  const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>', {
+    url: 'https://example.com/preview.html',
+    pretendToBeVisual: true,
+  });
+
+  global.window = dom.window;
+  global.document = dom.window.document;
+  global.Image = dom.window.Image;
+  global.getComputedStyle = dom.window.getComputedStyle.bind(dom.window);
+
+  try {
+    const wrapper = dom.window.document.createElement('div');
+    const iconContainer = dom.window.document.createElement('div');
+    iconContainer.setAttribute('data-export-feature', 'card');
+    iconContainer.setAttribute('data-export-feature-type', 'standard');
+    const img = dom.window.document.createElement('img');
+    img.src = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=';
+    img.setAttribute('data-export-feature-image', 'icon');
+    img.setAttribute('width', '86');
+    img.setAttribute('height', '86');
+    img.width = 86;
+    img.height = 86;
+    img.style.width = '86px';
+    img.style.height = '86px';
+    img.__pbFallbackWidth = 320;
+    img.__pbFallbackHeight = 320;
+    Object.defineProperty(img, 'naturalWidth', { value: 320, configurable: true });
+    Object.defineProperty(img, 'naturalHeight', { value: 320, configurable: true });
+    img.getBoundingClientRect = () => ({ width: 320, height: 320, top: 0, left: 0, right: 320, bottom: 320 });
+    iconContainer.appendChild(img);
+    wrapper.appendChild(iconContainer);
+
+    const warnings = [];
+    await emailExportPrivate.inlineAllRasterImages(wrapper, warnings, {});
+
+    const [inlined] = wrapper.getElementsByTagName('img');
+    assert.ok(inlined);
+    assert.strictEqual(inlined.getAttribute('width'), '86');
+    assert.strictEqual(inlined.style.width, '86px');
+    assert.ok(wrapper.innerHTML.includes('width="86"'));
+    assert.ok(wrapper.innerHTML.includes('height="86"'));
+  } finally {
+    if (originalDocument === undefined) {
+      delete global.document;
+    } else {
+      global.document = originalDocument;
+    }
+    if (originalWindow === undefined) {
+      delete global.window;
+    } else {
+      global.window = originalWindow;
+    }
+    if (originalImage === undefined) {
+      delete global.Image;
+    } else {
+      global.Image = originalImage;
+    }
+    if (originalGetComputedStyle === undefined) {
+      delete global.getComputedStyle;
+    } else {
+      global.getComputedStyle = originalGetComputedStyle;
+    }
+  }
+});
+
 test('email export builds enterprise layout with inline images', async () => {
   const { __private: emailExportPrivate } = require('../js/emailExport.js');
   const originalDocument = global.document;
