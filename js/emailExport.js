@@ -2,10 +2,10 @@ const EMAIL_MAX_WIDTH = 600;
 const DEFAULT_EMAIL_WIDTH = EMAIL_MAX_WIDTH;
 const DEFAULT_IMAGE_WIDTH = 320;
 const DEFAULT_IMAGE_HEIGHT = 180;
-const EMAIL_FEATURE_STANDARD_IMAGE_MAX_WIDTH = 140;
-const EMAIL_FEATURE_STANDARD_IMAGE_MAX_HEIGHT = 120;
+const EMAIL_FEATURE_STANDARD_IMAGE_MAX_WIDTH = 56;
+const EMAIL_FEATURE_STANDARD_IMAGE_MAX_HEIGHT = 56;
 const EMAIL_FEATURE_HERO_IMAGE_MAX_WIDTH = 220;
-const EMAIL_FEATURE_HERO_IMAGE_MAX_HEIGHT = 160;
+const EMAIL_FEATURE_HERO_IMAGE_MAX_HEIGHT = 220;
 const FALLBACK_FONT_FAMILY = '-apple-system, Segoe UI, Roboto, Arial, sans-serif';
 const EMAIL_BODY_BACKGROUND = '#FAF7F3';
 const EMAIL_BODY_TEXT_COLOR = '#0B1220';
@@ -102,12 +102,18 @@ function clampFeatureImageWidth(width, { isHero } = {}) {
   return Math.min(clampWidth(width), maxWidth);
 }
 
-function clampFeatureImageHeight(height, { isHero } = {}) {
+function clampFeatureImageHeight(height, { isHero, mirrorWidth } = {}) {
   const maxHeight = isHero ? EMAIL_FEATURE_HERO_IMAGE_MAX_HEIGHT : EMAIL_FEATURE_STANDARD_IMAGE_MAX_HEIGHT;
+  const normalizedMirror = Number.isFinite(mirrorWidth) && mirrorWidth > 0 ? Math.round(mirrorWidth) : null;
+  const mirrorLimit = normalizedMirror != null ? Math.min(normalizedMirror, maxHeight) : null;
   if (!Number.isFinite(height) || height <= 0) {
-    return maxHeight;
+    return mirrorLimit != null ? mirrorLimit : maxHeight;
   }
-  return Math.min(Math.max(32, Math.round(height)), maxHeight);
+  const clamped = Math.min(Math.max(32, Math.round(height)), maxHeight);
+  if (mirrorLimit != null) {
+    return mirrorLimit;
+  }
+  return clamped;
 }
 
 function buildSectionPadding({ top = 0, bottom = EMAIL_SECTION_BOTTOM_PADDING } = {}) {
@@ -662,7 +668,7 @@ async function renderFeatureCard(feature, brand, warnings) {
   if (image) {
     if ((image.kind === 'css-bg' || image.background === true) && (image.css || image.src)) {
       const width = clampFeatureImageWidth(image.width ?? DEFAULT_IMAGE_WIDTH, { isHero });
-      const height = clampFeatureImageHeight(image.height ?? DEFAULT_IMAGE_HEIGHT, { isHero });
+      const height = clampFeatureImageHeight(image.height, { isHero, mirrorWidth: width });
       let imgSrc = image.src || '';
       if (!imgSrc && image.css) {
         const match = image.css.match(/background-image\s*:\s*url\((['"]?)([^'")]+)\1\)/i);
