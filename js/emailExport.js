@@ -2,8 +2,8 @@ const EMAIL_MAX_WIDTH = 600;
 const DEFAULT_EMAIL_WIDTH = EMAIL_MAX_WIDTH;
 const DEFAULT_IMAGE_WIDTH = 320;
 const DEFAULT_IMAGE_HEIGHT = 180;
-const EMAIL_FEATURE_STANDARD_IMAGE_MAX_WIDTH = 56;
-const EMAIL_FEATURE_STANDARD_IMAGE_MAX_HEIGHT = 56;
+const EMAIL_FEATURE_STANDARD_IMAGE_MAX_WIDTH = 76;
+const EMAIL_FEATURE_STANDARD_IMAGE_MAX_HEIGHT = 76;
 const EMAIL_FEATURE_HERO_IMAGE_MAX_WIDTH = 220;
 const EMAIL_FEATURE_HERO_IMAGE_MAX_HEIGHT = 220;
 const FALLBACK_FONT_FAMILY = '-apple-system, Segoe UI, Roboto, Arial, sans-serif';
@@ -432,15 +432,25 @@ async function inlineBackgroundImage(el, warnings, options = {}) {
   }
 }
 
+function toPositiveNumber(value) {
+  const number = Number(value);
+  if (Number.isFinite(number) && number > 0) {
+    return number;
+  }
+  return undefined;
+}
+
 function setExplicitDimensions(el, fallbackWidth, fallbackHeight) {
   const rect = typeof el.getBoundingClientRect === 'function' ? el.getBoundingClientRect() : { width: 0, height: 0 };
   const naturalWidth = Number(el.naturalWidth) || 0;
   const naturalHeight = Number(el.naturalHeight) || 0;
-  const widthFallbacks = [fallbackWidth, rect.width, naturalWidth, Number(el.width), EMAIL_MAX_WIDTH];
+  const attrWidth = typeof el.getAttribute === 'function' ? toPositiveNumber(el.getAttribute('width')) : undefined;
+  const attrHeight = typeof el.getAttribute === 'function' ? toPositiveNumber(el.getAttribute('height')) : undefined;
+  const widthFallbacks = [fallbackWidth, attrWidth, rect.width, Number(el.width), naturalWidth, EMAIL_MAX_WIDTH];
   const widthCandidate = widthFallbacks.find((value) => Number.isFinite(value) && value > 0);
   const width = clampWidth(widthCandidate);
 
-  const heightFallbacks = [fallbackHeight, rect.height, naturalHeight, Number(el.height)];
+  const heightFallbacks = [fallbackHeight, attrHeight, rect.height, Number(el.height), naturalHeight];
   let heightCandidate = heightFallbacks.find((value) => Number.isFinite(value) && value > 0) || 0;
   if ((!heightCandidate || heightCandidate <= 0) && naturalWidth > 0 && naturalHeight > 0 && width > 0) {
     heightCandidate = (naturalHeight / naturalWidth) * width;
@@ -568,16 +578,31 @@ function ensureImageAttributes(image, fallbackWidth, fallbackHeight) {
   if (typeof image.removeAttribute === 'function') {
     image.removeAttribute('srcset');
   }
-  const hasWidthHint = Number.isFinite(fallbackWidth) && fallbackWidth > 0;
-  const hasHeightHint = Number.isFinite(fallbackHeight) && fallbackHeight > 0;
-  if (hasWidthHint) {
-    image.__pbFallbackWidth = fallbackWidth;
+
+  const widthAttr = typeof image.getAttribute === 'function' ? toPositiveNumber(image.getAttribute('width')) : undefined;
+  const heightAttr = typeof image.getAttribute === 'function' ? toPositiveNumber(image.getAttribute('height')) : undefined;
+
+  const widthHintArg = toPositiveNumber(fallbackWidth);
+  const heightHintArg = toPositiveNumber(fallbackHeight);
+
+  const storedWidth = toPositiveNumber(image.__pbFallbackWidth);
+  const storedHeight = toPositiveNumber(image.__pbFallbackHeight);
+
+  if (widthHintArg != null) {
+    image.__pbFallbackWidth = widthHintArg;
+  } else if (!storedWidth && widthAttr != null) {
+    image.__pbFallbackWidth = widthAttr;
   }
-  if (hasHeightHint) {
-    image.__pbFallbackHeight = fallbackHeight;
+
+  if (heightHintArg != null) {
+    image.__pbFallbackHeight = heightHintArg;
+  } else if (!storedHeight && heightAttr != null) {
+    image.__pbFallbackHeight = heightAttr;
   }
-  const widthHint = Number.isFinite(image.__pbFallbackWidth) ? image.__pbFallbackWidth : undefined;
-  const heightHint = Number.isFinite(image.__pbFallbackHeight) ? image.__pbFallbackHeight : undefined;
+
+  const widthHint = widthHintArg ?? toPositiveNumber(image.__pbFallbackWidth) ?? widthAttr;
+  const heightHint = heightHintArg ?? toPositiveNumber(image.__pbFallbackHeight) ?? heightAttr;
+
   setExplicitDimensions(image, widthHint, heightHint);
 }
 
