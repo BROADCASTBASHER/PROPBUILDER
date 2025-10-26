@@ -11,11 +11,6 @@ const EMAIL_SECTION_HORIZONTAL_PADDING = 28;
 const EMAIL_SECTION_BOTTOM_PADDING = 28;
 const EMAIL_HERO_TOP_PADDING = 28;
 const EMAIL_HERO_BOTTOM_PADDING = 24;
-const FEATURE_IMAGE_FRAME_HEIGHT = 172;
-const FEATURE_IMAGE_FRAME_PADDING = 14;
-const FEATURE_IMAGE_CORNER_RADIUS = 16;
-const FEATURE_IMAGE_BACKGROUND = 'rgba(11, 18, 32, 0.04)';
-const FEATURE_IMAGE_MAX_WIDTH = 320;
 
 class WarningCollector {
   constructor(initial) {
@@ -640,85 +635,47 @@ function textToHTML(text) {
   return esc(text).replace(/\r\n|\n|\r/g, '<br>');
 }
 
-function sanitizeFeatureImageCss(css) {
-  if (!css) {
-    return '';
-  }
-  return css
-    .split(';')
-    .map((rule) => rule.trim())
-    .filter((rule) => rule && !/^background(?:-image)?\s*:/i.test(rule))
-    .join('; ');
-}
-
-function extractImageSource(image) {
-  if (!image) {
-    return '';
-  }
-  if (image.src) {
-    return image.src;
-  }
-  if (image.css) {
-    const match = image.css.match(/background-image\s*:\s*url\((['"]?)([^'")]+)\1\)/i);
-    if (match && match[2]) {
-      return match[2];
-    }
-  }
-  return '';
-}
-
-function renderFeatureImage(feature, image) {
-  if (!image) {
-    return '';
-  }
-
-  const src = extractImageSource(image);
-  if (!src) {
-    return '';
-  }
-
-  const width = Math.min(FEATURE_IMAGE_MAX_WIDTH, clampWidth(image.width ?? DEFAULT_IMAGE_WIDTH));
-  const frameContentHeight = Math.max(48, FEATURE_IMAGE_FRAME_HEIGHT - FEATURE_IMAGE_FRAME_PADDING * 2);
-  const maxImageHeight = frameContentHeight;
-  const altText = image.alt || feature?.title || 'Feature image';
-  const assetAttr = image.assetKey ? ` data-asset-key="${esc(image.assetKey)}"` : '';
-  const sanitizedCss = sanitizeFeatureImageCss(image.css);
-
-  const innerRadius = Math.max(0, FEATURE_IMAGE_CORNER_RADIUS - 4);
-  const styleParts = [
-    'display:inline-block',
-    'width:auto',
-    'height:auto',
-    'max-width:100%',
-    `max-height:${maxImageHeight}px`,
-    'border:0',
-    'outline:none',
-    'text-decoration:none',
-    `border-radius:${innerRadius}px`,
-  ];
-  if (sanitizedCss) {
-    styleParts.push(sanitizedCss.replace(/;+$/g, ''));
-  }
-  const imgStyle = `${styleParts.join('; ')};`;
-
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%; border-spacing:0; background-color:${FEATURE_IMAGE_BACKGROUND}; border-radius:${FEATURE_IMAGE_CORNER_RADIUS}px; overflow:hidden;">
-    <tr>
-      <td valign="middle" style="padding:${FEATURE_IMAGE_FRAME_PADDING}px; text-align:center; height:${frameContentHeight}px;">
-        <img src="${esc(src)}" alt="${esc(altText)}" width="${width}" style="${imgStyle}"${assetAttr}>
-      </td>
-    </tr>
-  </table>`;
-}
-
 async function renderFeatureCard(feature, brand, warnings) {
   const fontFamily = brand?.fontFamily || FALLBACK_FONT_FAMILY;
   const bodyColor = brand?.colorText || '#333333';
   const titleColor = brand?.colorHeading || '#222222';
   const rows = [];
   const image = feature?.image;
-  const imageMarkup = renderFeatureImage(feature, image);
-  if (imageMarkup) {
-    rows.push(`<tr><td style="padding-bottom:16px;">${imageMarkup}</td></tr>`);
+  if (image) {
+    if ((image.kind === 'css-bg' || image.background === true) && (image.css || image.src)) {
+      const width = clampWidth(image.width ?? DEFAULT_IMAGE_WIDTH);
+      const height = Math.max(32, Math.round(image.height ?? DEFAULT_IMAGE_HEIGHT));
+      let imgSrc = image.src || '';
+      if (!imgSrc && image.css) {
+        const match = image.css.match(/background-image\s*:\s*url\((['"]?)([^'")]+)\1\)/i);
+        if (match && match[2]) {
+          imgSrc = match[2];
+        }
+      }
+      const altText = image.alt || feature.title || 'Feature image';
+      const styleParts = [
+        'display:block',
+        `width:${width}px`,
+        'max-width:100%',
+        `height:${height}px`,
+        'object-fit:cover',
+        'border:0',
+        'outline:none',
+        'text-decoration:none',
+        'border-radius:12px',
+      ];
+      if (image.css) {
+        styleParts.push(image.css.trim().replace(/;+$/g, ''));
+      }
+      const styleAttr = `${styleParts.join('; ')};`;
+      const assetAttr = image.assetKey ? ` data-asset-key="${esc(image.assetKey)}"` : '';
+      rows.push(`<tr><td style="padding-bottom:12px;"><img src="${esc(imgSrc)}" alt="${esc(altText)}" width="${width}" height="${height}" style="${styleAttr}"${assetAttr}></td></tr>`);
+    } else if (image.src) {
+      const width = clampWidth(image.width ?? DEFAULT_IMAGE_WIDTH);
+      const altText = image.alt || feature.title || 'Feature image';
+      const assetAttr = image.assetKey ? ` data-asset-key="${esc(image.assetKey)}"` : '';
+      rows.push(`<tr><td style="padding-bottom:12px;"><img src="${esc(image.src)}" alt="${esc(altText)}" width="${width}" style="display:block; width:${width}px; max-width:100%; height:auto; border:0; outline:none; text-decoration:none;"${assetAttr}></td></tr>`);
+    }
   }
   if (feature.title) {
     rows.push(`<tr><td style="font-family:${esc(fontFamily)}; font-size:18px; line-height:1.4; font-weight:600; color:${esc(titleColor)}; padding-bottom:6px;">${esc(feature.title)}</td></tr>`);
@@ -1042,17 +999,10 @@ function renderPriceCard(priceCard, brand) {
   const fontFamily = brand.fontFamily || FALLBACK_FONT_FAMILY;
   const shade = priceCard.shadedBgColor || brand.priceCardShade || '#F3F4F9';
   const sanitized = sanitizeHTML(priceCard.html);
-  const bubbleStyles = [
-    'width:100%',
-    'border-spacing:0',
-    `background-color:${shade}`,
-    'border-radius:12px',
-    'box-shadow:inset 0 1px 0 rgba(255,255,255,0.6), 0 8px 20px rgba(11,18,32,0.08)'
-  ].join('; ');
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" data-email-card="price-card" style="width:100%; border:1px solid rgba(11,18,32,0.08); border-radius:16px; background-color:#FFFFFF;">
     <tr>
       <td style="padding:24px;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="${esc(bubbleStyles)};">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%; border-spacing:0; background-color:${esc(shade)}; border-radius:12px;">
           <tr>
             <td style="padding:24px; font-family:${esc(fontFamily)}; font-size:16px; line-height:1.55; color:${esc(brand.colorText || '#333333')};">${sanitized}</td>
           </tr>
