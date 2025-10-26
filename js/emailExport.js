@@ -448,27 +448,34 @@ function setExplicitDimensions(el, fallbackWidth, fallbackHeight) {
   const attrHeight = typeof el.getAttribute === 'function' ? toPositiveNumber(el.getAttribute('height')) : undefined;
   const storedWidth = toPositiveNumber(el.__pbFallbackWidth);
   const storedHeight = toPositiveNumber(el.__pbFallbackHeight);
-  const widthFallbacks = [
-    toPositiveNumber(fallbackWidth),
-    storedWidth,
-    attrWidth,
+
+  const firstPositive = (...values) => {
+    for (const value of values) {
+      const numeric = toPositiveNumber(value);
+      if (numeric != null) {
+        return numeric;
+      }
+    }
+    return undefined;
+  };
+
+  const preferredWidth = firstPositive(fallbackWidth, storedWidth, attrWidth);
+  const widthCandidate = firstPositive(
+    preferredWidth,
     rect.width,
     Number(el.width),
     naturalWidth,
     EMAIL_MAX_WIDTH,
-  ];
-  const widthCandidate = widthFallbacks.find((value) => Number.isFinite(value) && value > 0);
+  );
   const width = clampWidth(widthCandidate);
 
-  const heightFallbacks = [
-    toPositiveNumber(fallbackHeight),
-    storedHeight,
-    attrHeight,
+  const preferredHeight = firstPositive(fallbackHeight, storedHeight, attrHeight);
+  let heightCandidate = firstPositive(
+    preferredHeight,
     rect.height,
     Number(el.height),
     naturalHeight,
-  ];
-  let heightCandidate = heightFallbacks.find((value) => Number.isFinite(value) && value > 0) || 0;
+  ) || 0;
   if ((!heightCandidate || heightCandidate <= 0) && naturalWidth > 0 && naturalHeight > 0 && width > 0) {
     heightCandidate = (naturalHeight / naturalWidth) * width;
   }
@@ -476,6 +483,13 @@ function setExplicitDimensions(el, fallbackWidth, fallbackHeight) {
     heightCandidate = width;
   }
   const height = Math.max(1, Math.round(heightCandidate));
+
+  if (Number.isFinite(width) && width > 0) {
+    el.__pbFallbackWidth = width;
+  }
+  if (Number.isFinite(height) && height > 0) {
+    el.__pbFallbackHeight = height;
+  }
 
   el.width = width;
   if (typeof el.setAttribute === 'function') {
@@ -602,34 +616,41 @@ function ensureImageAttributes(image, fallbackWidth, fallbackHeight, options = {
   const widthHintArg = toPositiveNumber(fallbackWidth);
   const heightHintArg = toPositiveNumber(fallbackHeight);
 
-  const storedWidth = toPositiveNumber(image.__pbFallbackWidth);
-  const storedHeight = toPositiveNumber(image.__pbFallbackHeight);
+  let storedWidth = toPositiveNumber(image.__pbFallbackWidth);
+  let storedHeight = toPositiveNumber(image.__pbFallbackHeight);
 
   const preferAttrHints = Boolean(options?.preferAttributes);
+  const propagateAttrHints = preferAttrHints || Boolean(options?.propagateAttributeHints);
 
   if (widthHintArg != null) {
     image.__pbFallbackWidth = widthHintArg;
-  } else if (preferAttrHints && widthAttr != null) {
+    storedWidth = widthHintArg;
+  } else if (propagateAttrHints && widthAttr != null) {
     image.__pbFallbackWidth = widthAttr;
+    storedWidth = widthAttr;
   } else if (!storedWidth && widthAttr != null) {
     image.__pbFallbackWidth = widthAttr;
+    storedWidth = widthAttr;
   }
 
   if (heightHintArg != null) {
     image.__pbFallbackHeight = heightHintArg;
-  } else if (preferAttrHints && heightAttr != null) {
+    storedHeight = heightHintArg;
+  } else if (propagateAttrHints && heightAttr != null) {
     image.__pbFallbackHeight = heightAttr;
+    storedHeight = heightAttr;
   } else if (!storedHeight && heightAttr != null) {
     image.__pbFallbackHeight = heightAttr;
+    storedHeight = heightAttr;
   }
 
   const widthHint = widthHintArg
     ?? (preferAttrHints && widthAttr != null ? widthAttr : undefined)
-    ?? toPositiveNumber(image.__pbFallbackWidth)
+    ?? storedWidth
     ?? widthAttr;
   const heightHint = heightHintArg
     ?? (preferAttrHints && heightAttr != null ? heightAttr : undefined)
-    ?? toPositiveNumber(image.__pbFallbackHeight)
+    ?? storedHeight
     ?? heightAttr;
 
   setExplicitDimensions(image, widthHint, heightHint);
@@ -666,7 +687,7 @@ async function inlineAllRasterImages(root, warnings, options = {}) {
         image.src = absolute;
       }
     }
-    ensureImageAttributes(image, undefined, undefined, { preferAttributes: true });
+    ensureImageAttributes(image, undefined, undefined, { preferAttributes: true, propagateAttributeHints: true });
   }
 
   const elements = Array.from(root.querySelectorAll('*'));

@@ -1125,6 +1125,146 @@ test('email export preserves clamped feature icon dimensions when inlining', asy
   }
 });
 
+test('preview mirrored export retains feature icon clamp at 115px', async () => {
+  const { __private: emailExportPrivate } = require('../js/emailExport.js');
+  const originalDocument = global.document;
+  const originalWindow = global.window;
+  const originalImage = global.Image;
+  const originalGetComputedStyle = global.getComputedStyle;
+
+  const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>', {
+    url: 'https://example.com/preview.html',
+    pretendToBeVisual: true,
+  });
+
+  global.window = dom.window;
+  global.document = dom.window.document;
+  global.Image = dom.window.Image;
+  global.getComputedStyle = dom.window.getComputedStyle.bind(dom.window);
+
+  const imageProto = dom.window.HTMLImageElement.prototype;
+  const originalCloneNode = imageProto.cloneNode;
+  imageProto.cloneNode = function patchedCloneNode(deep) {
+    const clone = originalCloneNode.call(this, deep);
+    const natWidthAttr = this.getAttribute('data-natural-width');
+    const natHeightAttr = this.getAttribute('data-natural-height');
+    if (natWidthAttr) {
+      Object.defineProperty(clone, 'naturalWidth', {
+        value: Number(natWidthAttr),
+        configurable: true,
+      });
+    }
+    if (natHeightAttr) {
+      Object.defineProperty(clone, 'naturalHeight', {
+        value: Number(natHeightAttr),
+        configurable: true,
+      });
+    }
+    if (typeof this.getBoundingClientRect === 'function') {
+      clone.getBoundingClientRect = this.getBoundingClientRect.bind(this);
+    }
+    return clone;
+  };
+
+  try {
+    const preview = dom.window.document.createElement('div');
+    preview.id = 'preview-export';
+    preview.getBoundingClientRect = () => ({
+      width: 640,
+      height: 480,
+      top: 0,
+      left: 0,
+      right: 640,
+      bottom: 480,
+    });
+    dom.window.document.body.appendChild(preview);
+
+    const card = dom.window.document.createElement('div');
+    card.setAttribute('data-export-feature', 'card');
+    card.setAttribute('data-export-feature-type', 'hero');
+
+    const iconWrapper = dom.window.document.createElement('div');
+    iconWrapper.className = 'icon';
+    iconWrapper.style.width = '115px';
+    iconWrapper.style.height = '115px';
+    iconWrapper.getBoundingClientRect = () => ({
+      width: 115,
+      height: 115,
+      top: 0,
+      left: 0,
+      right: 115,
+      bottom: 115,
+    });
+
+    const img = dom.window.document.createElement('img');
+    img.setAttribute('data-export-feature-image', 'hero');
+    img.src = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=';
+    img.alt = 'Hero feature';
+    img.setAttribute('width', '115');
+    img.setAttribute('height', '115');
+    img.style.width = '115px';
+    img.style.height = '115px';
+    img.width = 115;
+    img.height = 115;
+    img.setAttribute('data-natural-width', '320');
+    img.setAttribute('data-natural-height', '320');
+    Object.defineProperty(img, 'naturalWidth', { value: 320, configurable: true });
+    Object.defineProperty(img, 'naturalHeight', { value: 320, configurable: true });
+    img.getBoundingClientRect = () => ({
+      width: 320,
+      height: 320,
+      top: 0,
+      left: 0,
+      right: 320,
+      bottom: 320,
+    });
+
+    iconWrapper.appendChild(img);
+    card.appendChild(iconWrapper);
+
+    const title = dom.window.document.createElement('div');
+    title.setAttribute('data-export-feature-title', '');
+    title.textContent = 'Hero feature';
+    card.appendChild(title);
+
+    preview.appendChild(card);
+
+    const proposal = emailExportPrivate.collectPreviewProposal(dom.window.document);
+    assert.strictEqual(proposal.features.length, 1);
+    assert.strictEqual(proposal.features[0].image.width, 115);
+
+    const warnings = [];
+    const html = await emailExportPrivate.buildPreviewMirroredEmailHTML(proposal, warnings);
+    assert.ok(html, 'export HTML should be generated');
+    const imgMatch = html.match(/<img[^>]+alt="Hero feature"[^>]*>/);
+    assert.ok(imgMatch, 'feature image should be present in mirrored export');
+    assert.ok(/width="115"/.test(imgMatch[0]), 'feature image width should remain 115px');
+    assert.ok(/height="115"/.test(imgMatch[0]), 'feature image height should remain 115px');
+  } finally {
+    imageProto.cloneNode = originalCloneNode;
+    if (originalDocument === undefined) {
+      delete global.document;
+    } else {
+      global.document = originalDocument;
+    }
+    if (originalWindow === undefined) {
+      delete global.window;
+    } else {
+      global.window = originalWindow;
+    }
+    if (originalImage === undefined) {
+      delete global.Image;
+    } else {
+      global.Image = originalImage;
+    }
+    if (originalGetComputedStyle === undefined) {
+      delete global.getComputedStyle;
+    } else {
+      global.getComputedStyle = originalGetComputedStyle;
+    }
+  }
+});
+
 test('email export builds enterprise layout with inline images', async () => {
   const { __private: emailExportPrivate } = require('../js/emailExport.js');
   const originalDocument = global.document;
