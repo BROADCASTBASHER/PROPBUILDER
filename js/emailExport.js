@@ -446,11 +446,28 @@ function setExplicitDimensions(el, fallbackWidth, fallbackHeight) {
   const naturalHeight = Number(el.naturalHeight) || 0;
   const attrWidth = typeof el.getAttribute === 'function' ? toPositiveNumber(el.getAttribute('width')) : undefined;
   const attrHeight = typeof el.getAttribute === 'function' ? toPositiveNumber(el.getAttribute('height')) : undefined;
-  const widthFallbacks = [fallbackWidth, attrWidth, rect.width, Number(el.width), naturalWidth, EMAIL_MAX_WIDTH];
+  const storedWidth = toPositiveNumber(el.__pbFallbackWidth);
+  const storedHeight = toPositiveNumber(el.__pbFallbackHeight);
+  const widthFallbacks = [
+    toPositiveNumber(fallbackWidth),
+    storedWidth,
+    attrWidth,
+    rect.width,
+    Number(el.width),
+    naturalWidth,
+    EMAIL_MAX_WIDTH,
+  ];
   const widthCandidate = widthFallbacks.find((value) => Number.isFinite(value) && value > 0);
   const width = clampWidth(widthCandidate);
 
-  const heightFallbacks = [fallbackHeight, attrHeight, rect.height, Number(el.height), naturalHeight];
+  const heightFallbacks = [
+    toPositiveNumber(fallbackHeight),
+    storedHeight,
+    attrHeight,
+    rect.height,
+    Number(el.height),
+    naturalHeight,
+  ];
   let heightCandidate = heightFallbacks.find((value) => Number.isFinite(value) && value > 0) || 0;
   if ((!heightCandidate || heightCandidate <= 0) && naturalWidth > 0 && naturalHeight > 0 && width > 0) {
     heightCandidate = (naturalHeight / naturalWidth) * width;
@@ -574,7 +591,7 @@ async function uploadCanvasImage(canvas, warnings, options = {}) {
   return httpsUrl;
 }
 
-function ensureImageAttributes(image, fallbackWidth, fallbackHeight) {
+function ensureImageAttributes(image, fallbackWidth, fallbackHeight, options = {}) {
   if (typeof image.removeAttribute === 'function') {
     image.removeAttribute('srcset');
   }
@@ -588,20 +605,32 @@ function ensureImageAttributes(image, fallbackWidth, fallbackHeight) {
   const storedWidth = toPositiveNumber(image.__pbFallbackWidth);
   const storedHeight = toPositiveNumber(image.__pbFallbackHeight);
 
+  const preferAttrHints = Boolean(options?.preferAttributes);
+
   if (widthHintArg != null) {
     image.__pbFallbackWidth = widthHintArg;
+  } else if (preferAttrHints && widthAttr != null) {
+    image.__pbFallbackWidth = widthAttr;
   } else if (!storedWidth && widthAttr != null) {
     image.__pbFallbackWidth = widthAttr;
   }
 
   if (heightHintArg != null) {
     image.__pbFallbackHeight = heightHintArg;
+  } else if (preferAttrHints && heightAttr != null) {
+    image.__pbFallbackHeight = heightAttr;
   } else if (!storedHeight && heightAttr != null) {
     image.__pbFallbackHeight = heightAttr;
   }
 
-  const widthHint = widthHintArg ?? toPositiveNumber(image.__pbFallbackWidth) ?? widthAttr;
-  const heightHint = heightHintArg ?? toPositiveNumber(image.__pbFallbackHeight) ?? heightAttr;
+  const widthHint = widthHintArg
+    ?? (preferAttrHints && widthAttr != null ? widthAttr : undefined)
+    ?? toPositiveNumber(image.__pbFallbackWidth)
+    ?? widthAttr;
+  const heightHint = heightHintArg
+    ?? (preferAttrHints && heightAttr != null ? heightAttr : undefined)
+    ?? toPositiveNumber(image.__pbFallbackHeight)
+    ?? heightAttr;
 
   setExplicitDimensions(image, widthHint, heightHint);
 }
@@ -637,7 +666,7 @@ async function inlineAllRasterImages(root, warnings, options = {}) {
         image.src = absolute;
       }
     }
-    ensureImageAttributes(image);
+    ensureImageAttributes(image, undefined, undefined, { preferAttributes: true });
   }
 
   const elements = Array.from(root.querySelectorAll('*'));
