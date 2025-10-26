@@ -12,6 +12,43 @@ const EMAIL_SECTION_BOTTOM_PADDING = 28;
 const EMAIL_HERO_TOP_PADDING = 28;
 const EMAIL_HERO_BOTTOM_PADDING = 24;
 
+class WarningCollector {
+  constructor(initial) {
+    this._warnings = Array.isArray(initial) ? initial : [];
+    this._seen = new Set(this._warnings);
+  }
+
+  push(message) {
+    const trimmed = String(message ?? '').trim();
+    if (!trimmed || this._seen.has(trimmed)) {
+      return;
+    }
+    this._seen.add(trimmed);
+    this._warnings.push(trimmed);
+  }
+
+  toArray() {
+    return [...this._warnings];
+  }
+
+  get length() {
+    return this._warnings.length;
+  }
+}
+
+function asWarningCollector(value) {
+  if (!value) {
+    return new WarningCollector();
+  }
+  if (value instanceof WarningCollector) {
+    return value;
+  }
+  if (typeof value.push === 'function' && typeof value.length === 'number') {
+    return new WarningCollector(value);
+  }
+  return new WarningCollector();
+}
+
 const INLINE_STYLE_PROPERTIES = [
   'align-content', 'align-items', 'align-self', 'background', 'background-attachment', 'background-blend-mode',
   'background-clip', 'background-color', 'background-image', 'background-origin', 'background-position',
@@ -1136,74 +1173,138 @@ function splitFeatures(features) {
   return { standard, hero };
 }
 
+const ENTERPRISE_SECTION_PIPELINE = [
+  { id: 'banner', render: (ctx) => ctx.renderBanner() },
+  { id: 'header', render: (ctx) => ctx.renderHeader() },
+  { id: 'overview', render: (ctx) => ctx.renderOverview() },
+  { id: 'features', render: (ctx) => ctx.renderStandardFeatures() },
+  { id: 'hero-features', render: (ctx) => ctx.renderHeroFeatures() },
+  { id: 'pricing-table', render: (ctx) => ctx.renderPricingTable() },
+  { id: 'investment', render: (ctx) => ctx.renderInvestment() },
+  { id: 'data-sources', render: (ctx) => ctx.renderDataSources() },
+];
+
+class EmailEnterpriseLayout {
+  constructor(proposal, warnings) {
+    this.proposal = proposal || {};
+    this.brand = normalizeBrand(this.proposal.brand);
+    this.warnings = asWarningCollector(warnings);
+    this._featureSplit = null;
+  }
+
+  get document() {
+    if (typeof document !== 'undefined') {
+      return document;
+    }
+    return null;
+  }
+
+  get featureSplit() {
+    if (!this._featureSplit) {
+      this._featureSplit = splitFeatures(this.proposal.features);
+    }
+    return this._featureSplit;
+  }
+
+  async renderBanner() {
+    return renderBanner(this.proposal.banner);
+  }
+
+  renderHeader() {
+    return buildHeaderSection(this.proposal, this.brand);
+  }
+
+  renderOverview() {
+    return renderOverviewSection(this.proposal, this.brand);
+  }
+
+  async renderStandardFeatures() {
+    const { standard } = this.featureSplit;
+    if (!standard.length) {
+      return '';
+    }
+    return buildFeatureSection(standard, 'Features & benefits', this.brand, this.warnings, { columns: 2, sectionId: 'features' });
+  }
+
+  async renderHeroFeatures() {
+    const { hero } = this.featureSplit;
+    if (!hero.length) {
+      return '';
+    }
+    return buildFeatureSection(hero, 'Key features included', this.brand, this.warnings, { columns: 1, sectionId: 'hero-features' });
+  }
+
+  renderPricingTable() {
+    return renderPricingTable(this.proposal.pricingTableHTML, this.brand);
+  }
+
+  renderInvestment() {
+    return renderInvestmentSection(this.proposal.priceCard, this.proposal.commercialTerms, this.brand);
+  }
+
+  renderDataSources() {
+    const html = renderDataSourcesSection(this.proposal.dataSources, this.brand);
+    if (!html) {
+      return '';
+    }
+    return `<tr data-email-section="data-sources"><td style="padding:${buildSectionPadding()};">${html}</td></tr>`;
+  }
+
+  async composeSections() {
+    const parts = [];
+    for (const step of ENTERPRISE_SECTION_PIPELINE) {
+      try {
+        const result = await step.render(this);
+        if (result) {
+          parts.push(result);
+        }
+      } catch (error) {
+        this.warnings.push(`Section ${step.id} failed: ${error?.message || error}`);
+      }
+    }
+    return parts;
+  }
+
+  createWrapper(content) {
+    const markup = buildOuterWrapper(content, this.brand);
+    const doc = this.document;
+    if (!doc || typeof doc.createElement !== 'function') {
+      throw new Error('A DOM is required to serialise the enterprise layout');
+    }
+    const wrapper = doc.createElement('div');
+    wrapper.innerHTML = markup;
+    return wrapper;
+  }
+
+  async inlineAssets(wrapper) {
+    await inlineAllRasterImages(wrapper, this.warnings, buildRasterOptionsFromProposal(this.proposal));
+  }
+
+  serialise(wrapper) {
+    const fontFamily = this.brand.fontFamily || FALLBACK_FONT_FAMILY;
+    const emailBody = wrapper.innerHTML;
+    return [
+      '<!doctype html><html><head><meta charset="utf-8">',
+      '<meta http-equiv="x-ua-compatible" content="ie=edge">',
+      '<meta name="viewport" content="width=device-width, initial-scale=1">',
+      '</head>',
+      `<body style="margin:0; padding:0; background-color:${esc(EMAIL_BODY_BACKGROUND)}; font-family:${esc(fontFamily)};">`,
+      emailBody,
+      '</body></html>'
+    ].join('');
+  }
+}
+
 async function buildLegacyEmailExportHTML(proposal, warnings) {
-  const brand = normalizeBrand(proposal.brand);
-  const contentParts = [];
-
-  const bannerHtml = await renderBanner(proposal.banner);
-  if (bannerHtml) {
-    contentParts.push(bannerHtml);
+  const layout = new EmailEnterpriseLayout(proposal, warnings);
+  const sections = await layout.composeSections();
+  const content = sections.filter(Boolean).join('\n');
+  if (!content) {
+    return '';
   }
-
-  const headerSection = buildHeaderSection(proposal, brand);
-  if (headerSection) {
-    contentParts.push(headerSection);
-  }
-
-  const overviewSection = renderOverviewSection(proposal, brand);
-  if (overviewSection) {
-    contentParts.push(overviewSection);
-  }
-
-  const { standard: standardFeatures, hero: heroFeatures } = splitFeatures(proposal.features);
-
-  if (standardFeatures.length) {
-    const featureSection = await buildFeatureSection(standardFeatures, 'Features & benefits', brand, warnings, { columns: 2, sectionId: 'features' });
-    if (featureSection) {
-      contentParts.push(featureSection);
-    }
-  }
-
-  if (heroFeatures.length) {
-    const heroSection = await buildFeatureSection(heroFeatures, 'Key features included', brand, warnings, { columns: 1, sectionId: 'hero-features' });
-    if (heroSection) {
-      contentParts.push(heroSection);
-    }
-  }
-
-  const pricingTableHtml = renderPricingTable(proposal.pricingTableHTML, brand);
-  if (pricingTableHtml) {
-    contentParts.push(pricingTableHtml);
-  }
-
-  const investmentSection = renderInvestmentSection(proposal.priceCard, proposal.commercialTerms, brand);
-  if (investmentSection) {
-    contentParts.push(investmentSection);
-  }
-
-  const dataSourcesHtml = renderDataSourcesSection(proposal.dataSources, brand);
-  if (dataSourcesHtml) {
-    contentParts.push(`<tr data-email-section="data-sources"><td style="padding:${buildSectionPadding()};">${dataSourcesHtml}</td></tr>`);
-  }
-
-  const content = contentParts.filter(Boolean).join('\n');
-  const wrapperMarkup = buildOuterWrapper(content, brand);
-  const wrapper = document.createElement('div');
-  wrapper.innerHTML = wrapperMarkup;
-
-  await inlineAllRasterImages(wrapper, warnings, buildRasterOptionsFromProposal(proposal));
-
-  const fontFamily = brand.fontFamily || FALLBACK_FONT_FAMILY;
-  const emailBody = wrapper.innerHTML;
-  return [
-    '<!doctype html><html><head><meta charset="utf-8">',
-    '<meta http-equiv="x-ua-compatible" content="ie=edge">',
-    '<meta name="viewport" content="width=device-width, initial-scale=1">',
-    '</head>',
-    `<body style="margin:0; padding:0; background-color:${esc(EMAIL_BODY_BACKGROUND)}; font-family:${esc(fontFamily)};">`,
-    emailBody,
-    '</body></html>'
-  ].join('');
+  const wrapper = layout.createWrapper(content);
+  await layout.inlineAssets(wrapper);
+  return layout.serialise(wrapper);
 }
 
 async function buildPreviewMirroredEmailHTML(proposal, warnings) {
@@ -1249,20 +1350,20 @@ async function buildEmailExportHTML(proposal) {
   if (!proposal || typeof proposal !== 'object') {
     throw new Error('A proposal object is required');
   }
-  const warnings = [];
+  const warningCollector = new WarningCollector();
 
   let html = null;
   try {
-    html = await buildLegacyEmailExportHTML(proposal, warnings);
+    html = await buildLegacyEmailExportHTML(proposal, warningCollector);
   } catch (error) {
-    warnings.push(`Enterprise email layout failed: ${error?.message || error}`);
+    warningCollector.push(`Enterprise email layout failed: ${error?.message || error}`);
   }
 
   if (!html) {
     try {
-      html = await buildPreviewMirroredEmailHTML(proposal, warnings);
+      html = await buildPreviewMirroredEmailHTML(proposal, warningCollector);
     } catch (error) {
-      warnings.push(`Preview export unavailable: ${error?.message || error}`);
+      warningCollector.push(`Preview export unavailable: ${error?.message || error}`);
     }
   }
 
@@ -1282,7 +1383,7 @@ async function buildEmailExportHTML(proposal) {
   return {
     html,
     sizeKB,
-    warnings,
+    warnings: warningCollector.toArray(),
   };
 }
 
@@ -2100,14 +2201,14 @@ async function generatePreviewEmailPackage(doc) {
     throw new Error('Preview export container (#preview-export) not found');
   }
   const clone = preview.cloneNode(true);
-  const warnings = [];
+  const warnings = new WarningCollector();
   inlineComputedStylesTree(preview, clone, doc);
   ensureCommercialTermsSpacing(clone);
   const attachments = await collectCidImagesFromPreview(preview, clone, warnings);
   const proposal = collectPreviewProposal(doc);
   const html = buildPreviewHtmlDocument(doc, clone, proposal);
   const text = buildTextFallbackFromProposal(proposal);
-  return { html, text, attachments, proposal, warnings };
+  return { html, text, attachments, proposal, warnings: warnings.toArray() };
 }
 
 async function generatePreviewEmailEml(rootDocument) {
