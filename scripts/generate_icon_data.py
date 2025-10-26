@@ -106,7 +106,10 @@ def build_logo_map() -> dict[str, str]:
         if not path.exists():
             missing.append((label, path))
             continue
-        mapping[label] = normalise_url(path)
+        mime = mime_for_extension(path.suffix)
+        payload = path.read_bytes()
+        encoded = base64.b64encode(payload).decode("ascii")
+        mapping[label] = f"data:{mime};base64,{encoded}"
     if missing:
         formatted = "\n".join(f"  - {label}: {path}" for label, path in missing)
         raise RuntimeError(f"Missing logo assets:\n{formatted}")
