@@ -819,8 +819,8 @@ test('email export replaces local feature icons with data URIs', async () => {
           image: {
             src: './icons/local.png',
             alt: 'Local icon',
-            width: 72,
-            height: 72,
+            width: 300,
+            height: 300,
           },
         },
       ],
@@ -832,7 +832,7 @@ test('email export replaces local feature icons with data URIs', async () => {
     assert.ok(!result.html.includes('file:///'));
     const featureImgMatch = result.html.match(/<img[^>]+alt="Local icon"[^>]*>/);
     assert.ok(featureImgMatch, 'feature image should be present in export');
-    assert.ok(/width="56"/.test(featureImgMatch[0]), 'feature image width should remain clamped to 56px');
+    assert.ok(/width="150"/.test(featureImgMatch[0]), 'feature image width should be clamped to 150px');
   } finally {
     if (originalDocument === undefined) {
       delete global.document;
