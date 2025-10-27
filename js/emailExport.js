@@ -11,7 +11,7 @@ const EMAIL_BODY_BACKGROUND = '#FAF7F3';
 const EMAIL_BODY_TEXT_COLOR = '#0B1220';
 const EMAIL_BODY_FONT_STACK = "'TelstraText', Arial, sans-serif";
 const EMAIL_SURFACE_RADIUS = 24;
-const EMAIL_SECTION_HORIZONTAL_PADDING = 28;
+const EMAIL_SECTION_HORIZONTAL_PADDING = 24;
 const EMAIL_SECTION_BOTTOM_PADDING = 28;
 const EMAIL_HERO_TOP_PADDING = 28;
 const EMAIL_HERO_BOTTOM_PADDING = 24;
@@ -1250,7 +1250,7 @@ function buildOuterWrapper(content, brand) {
   const surfaceRadius = EMAIL_SURFACE_RADIUS;
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%; background-color:${esc(background)};">
       <tr>
-        <td align="center" style="padding:32px 16px;">
+        <td align="center" style="padding:24px 12px;">
           <!--[if mso]><table width="${DEFAULT_EMAIL_WIDTH}" align="center" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->
           <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="${DEFAULT_EMAIL_WIDTH}" data-email-surface="card" style="width:${DEFAULT_EMAIL_WIDTH}px; max-width:100%; background-color:#FFFFFF; border:1px solid ${borderColor}; border-radius:${surfaceRadius}px; overflow:hidden;">
             ${content}
