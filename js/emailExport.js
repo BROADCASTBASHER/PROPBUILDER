@@ -1,4 +1,4 @@
-const EMAIL_MAX_WIDTH = 600;
+const EMAIL_MAX_WIDTH = 680;
 const DEFAULT_EMAIL_WIDTH = EMAIL_MAX_WIDTH;
 const DEFAULT_IMAGE_WIDTH = 320;
 const DEFAULT_IMAGE_HEIGHT = 180;
@@ -1251,7 +1251,7 @@ function buildOuterWrapper(content, brand) {
   const surfaceRadius = EMAIL_SURFACE_RADIUS;
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%; background-color:${esc(background)};">
       <tr>
-        <td align="center" style="padding:16px 8px;">
+        <td align="center" style="padding:16px 0;">
           <!--[if mso]><table width="${DEFAULT_EMAIL_WIDTH}" align="center" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->
           <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="${DEFAULT_EMAIL_WIDTH}" data-email-surface="card" style="width:${DEFAULT_EMAIL_WIDTH}px; max-width:100%; background-color:#FFFFFF; border:1px solid ${borderColor}; border-radius:${surfaceRadius}px; overflow:hidden;">
             ${content}
