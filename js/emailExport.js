@@ -11,7 +11,8 @@ const EMAIL_BODY_BACKGROUND = '#FAF7F3';
 const EMAIL_BODY_TEXT_COLOR = '#0B1220';
 const EMAIL_BODY_FONT_STACK = "'TelstraText', Arial, sans-serif";
 const EMAIL_SURFACE_RADIUS = 24;
-const EMAIL_SECTION_HORIZONTAL_PADDING = 24;
+const EMAIL_CARD_PADDING = 20;
+const EMAIL_SECTION_HORIZONTAL_PADDING = 18;
 const EMAIL_SECTION_BOTTOM_PADDING = 28;
 const EMAIL_HERO_TOP_PADDING = 28;
 const EMAIL_HERO_BOTTOM_PADDING = 24;
@@ -1006,7 +1007,7 @@ function renderExecutiveSummary(summary, brand) {
   const sanitized = textToHTML(summary);
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" data-email-card="executive-summary" style="width:100%; border:1px solid rgba(11,18,32,0.08); border-radius:16px; background-color:#FFFFFF;">
     <tr>
-      <td style="padding:24px;">
+      <td style="padding:${EMAIL_CARD_PADDING}px;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%; border-spacing:0;">
           <tr>
             <td style="font-family:${esc(fontFamily)}; font-size:12px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:${esc(eyebrow)};">Executive summary</td>
@@ -1029,7 +1030,7 @@ function renderKeyBenefitsSection(benefits, brand) {
   const eyebrow = brand.colorMuted || '#6B6F76';
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" data-email-card="key-benefits" style="width:100%; border:1px solid rgba(11,18,32,0.08); border-radius:16px; background-color:#FFFFFF;">
     <tr>
-      <td style="padding:24px;">
+      <td style="padding:${EMAIL_CARD_PADDING}px;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%; border-spacing:0;">
           <tr>
             <td style="font-family:${esc(fontFamily)}; font-size:12px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:${esc(eyebrow)};">Key Benefits</td>
@@ -1076,7 +1077,7 @@ function renderPricingTable(html, brand) {
   return `<tr data-email-section="pricing"><td style="padding:${buildSectionPadding()};">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" data-email-card="pricing-breakdown" style="width:100%; border:1px solid rgba(11,18,32,0.08); border-radius:16px; background-color:#FFFFFF;">
       <tr>
-        <td style="padding:24px;">
+        <td style="padding:${EMAIL_CARD_PADDING}px;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%; border-spacing:0;">
             <tr>
               <td style="font-family:${esc(fontFamily)}; font-size:12px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:${esc(eyebrow)};">Inclusions &amp; pricing breakdown</td>
@@ -1100,10 +1101,10 @@ function renderPriceCard(priceCard, brand) {
   const sanitized = sanitizeHTML(priceCard.html);
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" data-email-card="price-card" style="width:100%; border:1px solid rgba(11,18,32,0.08); border-radius:16px; background-color:#FFFFFF;">
     <tr>
-      <td style="padding:24px;">
+      <td style="padding:${EMAIL_CARD_PADDING}px;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%; border-spacing:0; background-color:${esc(shade)}; border-radius:12px;">
           <tr>
-            <td style="padding:24px; font-family:${esc(fontFamily)}; font-size:16px; line-height:1.55; color:${esc(brand.colorText || '#333333')};">${sanitized}</td>
+            <td style="padding:${EMAIL_CARD_PADDING}px; font-family:${esc(fontFamily)}; font-size:16px; line-height:1.55; color:${esc(brand.colorText || '#333333')};">${sanitized}</td>
           </tr>
         </table>
       </td>
@@ -1186,7 +1187,7 @@ function renderDataSourcesSection(sources, brand) {
 
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" data-email-card="data-sources" style="width:100%; border:1px solid rgba(11,18,32,0.08); border-radius:16px; background-color:#FFFFFF;">
     <tr>
-      <td style="padding:24px;">
+      <td style="padding:${EMAIL_CARD_PADDING}px;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%; border-spacing:0;">
           <tr>
             <td style="font-family:${esc(fontFamily)}; font-size:12px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:${esc(eyebrow)};">Data sources</td>
@@ -1209,7 +1210,7 @@ function renderCommercialTermsSection(terms, brand) {
   const eyebrow = brand.colorMuted || '#6B6F76';
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" data-email-card="commercial-terms" style="width:100%; border:1px solid rgba(11,18,32,0.08); border-radius:16px; background-color:#FFFFFF;">
     <tr>
-      <td style="padding:24px;">
+      <td style="padding:${EMAIL_CARD_PADDING}px;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%; border-spacing:0;">
           <tr>
             <td style="font-family:${esc(fontFamily)}; font-size:12px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:${esc(eyebrow)};">Commercial terms &amp; dependencies</td>
@@ -1250,7 +1251,7 @@ function buildOuterWrapper(content, brand) {
   const surfaceRadius = EMAIL_SURFACE_RADIUS;
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%; background-color:${esc(background)};">
       <tr>
-        <td align="center" style="padding:24px 12px;">
+        <td align="center" style="padding:16px 8px;">
           <!--[if mso]><table width="${DEFAULT_EMAIL_WIDTH}" align="center" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->
           <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="${DEFAULT_EMAIL_WIDTH}" data-email-surface="card" style="width:${DEFAULT_EMAIL_WIDTH}px; max-width:100%; background-color:#FFFFFF; border:1px solid ${borderColor}; border-radius:${surfaceRadius}px; overflow:hidden;">
             ${content}
