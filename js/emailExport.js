@@ -1428,20 +1428,12 @@ async function buildPreviewMirroredEmailHTML(proposal, warnings) {
   inlineComputedStylesTree(preview, clone, doc);
   ensureCommercialTermsSpacing(clone);
 
-  const rect = typeof preview.getBoundingClientRect === 'function'
-    ? preview.getBoundingClientRect()
-    : null;
-  const width = rect && Number.isFinite(rect.width) && rect.width > 0 ? Math.round(rect.width) : null;
   const styles = {
     display: 'block',
     margin: '0 auto',
+    width: `${DEFAULT_EMAIL_WIDTH}px`,
+    'max-width': '100%',
   };
-  if (width) {
-    styles.width = `${width}px`;
-    styles['max-width'] = `${width}px`;
-  } else {
-    styles['max-width'] = '100%';
-  }
   mergeStyleDeclarations(clone, styles);
 
   const wrapper = doc.createElement('div');
@@ -2151,6 +2143,7 @@ function buildPreviewHtmlDocument(doc, clone, proposal) {
     wrapper.appendChild(clone.cloneNode(true));
   }
   const previewHtml = wrapper ? wrapper.innerHTML : clone.outerHTML;
+  const outerWrapper = buildOuterWrapper(previewHtml, proposal?.brand || {});
   const htmlLines = [
     '<!DOCTYPE html>',
     '<html lang="en">',
@@ -2159,10 +2152,8 @@ function buildPreviewHtmlDocument(doc, clone, proposal) {
     '  <meta name="viewport" content="width=device-width,initial-scale=1">',
     `  <title>${title}</title>`,
     '</head>',
-    `  <body style="margin:0; padding:32px; background-color:${esc(EMAIL_BODY_BACKGROUND)}; color:${esc(EMAIL_BODY_TEXT_COLOR)}; font-family:${esc(EMAIL_BODY_FONT_STACK)};">`,
-    '    <div style="width:100%; display:flex; justify-content:center;">',
-    `      ${previewHtml}`,
-    '    </div>',
+    `  <body style="margin:0; padding:0; background-color:${esc(EMAIL_BODY_BACKGROUND)}; color:${esc(EMAIL_BODY_TEXT_COLOR)}; font-family:${esc(EMAIL_BODY_FONT_STACK)};">`,
+    `    ${outerWrapper}`,
     '  </body>',
     '</html>',
   ];
