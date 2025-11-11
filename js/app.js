@@ -1874,12 +1874,17 @@ function initializeApp() {
     const panelX = state.banner.layout === "left" ? 0 : width - panelWidth;
 
     if (!isHeadlineOnly) {
-      bannerCtx.save();
       const panelCornerRadius = Math.round(height * 0.18);
-      const panelRadii = state.banner.layout === "left"
+      const panelCornerRadii = state.banner.layout === "left"
         ? { br: panelCornerRadius }
         : { bl: panelCornerRadius };
-      fillRoundedRect(bannerCtx, panelX, 0, panelWidth, height, panelRadii, preset.panel);
+
+      bannerCtx.save();
+      clipRoundedRect(bannerCtx, panelX, 0, panelWidth, height, panelCornerRadii);
+      bannerCtx.fillStyle = preset.panel;
+      bannerCtx.fillRect(panelX, 0, panelWidth, height);
+      bannerCtx.restore();
+
       if (bannerPanelImage && bannerPanelImage.complete && bannerPanelImage.naturalWidth > 0) {
         const baseScaleX = panelWidth / bannerPanelImage.naturalWidth;
         const baseScaleY = height / bannerPanelImage.naturalHeight;
@@ -1894,19 +1899,10 @@ function initializeApp() {
           drawY += (Number(state.banner.offsetY || 0) / 100) * (height / 2);
         }
         bannerCtx.save();
- codex/add-lower-corner-rounding-to-banner-images-x76337
-        clipRoundedRect(bannerCtx, panelX, 0, panelWidth, height, panelRadii);
-
-        const imageCornerRadius = Math.round(height * 0.18);
-        const clipRadii = state.banner.layout === "left"
-          ? { br: imageCornerRadius }
-          : { bl: imageCornerRadius };
-        clipRoundedRect(bannerCtx, panelX, 0, panelWidth, height, clipRadii);
- main
+        clipRoundedRect(bannerCtx, panelX, 0, panelWidth, height, panelCornerRadii);
         bannerCtx.drawImage(bannerPanelImage, drawX, drawY, renderWidth, renderHeight);
         bannerCtx.restore();
       }
-      bannerCtx.restore();
     }
 
     const accentHeight = Math.max(8, Math.round(height * 0.04));
