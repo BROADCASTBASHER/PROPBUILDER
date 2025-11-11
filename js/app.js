@@ -244,6 +244,7 @@ const state = {
     scale: 1,
     offsetX: 0,
     offsetY: 0,
+    panelImage: null,
     logoMode: 'auto'
   },
   docType: DEFAULT_DOC_TYPE,
@@ -770,7 +771,6 @@ function collectProposalForEmail(doc) {
 
 // main
 let emailBuilderOverride = null;
-let emailEmlBuilderOverride = null;
 
 function resolveEmailBuilder() {
   if (emailBuilderOverride) {
@@ -783,26 +783,6 @@ function resolveEmailBuilder() {
     const mod = require('./emailExport');
     if (mod && typeof mod.generateEmailExport === 'function') {
       return mod.generateEmailExport;
-    }
-  } catch (error) {
-    // ignore module resolution errors in browser
-  }
-  return null;
-}
-
-function resolveEmailEmlBuilder() {
-  if (emailEmlBuilderOverride) {
-    return emailEmlBuilderOverride;
-  }
-  if (typeof window !== 'undefined'
-    && window.PropBuilderEmailExport
-    && typeof window.PropBuilderEmailExport.generatePreviewEmailEml === 'function') {
-    return window.PropBuilderEmailExport.generatePreviewEmailEml;
-  }
-  try {
-    const mod = require('./emailExport');
-    if (mod && typeof mod.generatePreviewEmailEml === 'function') {
-      return mod.generatePreviewEmailEml;
     }
   } catch (error) {
     // ignore module resolution errors in browser
@@ -833,23 +813,6 @@ async function exportEmailHTML() {
     throw new Error('No email HTML generated');
   }
   triggerDownloadFromText(doc, 'TBTC_VIC_EAST_Proposal.html', html, 'text/html;charset=utf-8');
-}
-
-async function exportEmailEML() {
-  const doc = typeof document !== 'undefined' ? document : null;
-  if (!doc) {
-    return;
-  }
-  const builder = resolveEmailEmlBuilder();
-  if (!builder) {
-    throw new Error('Email EML builder unavailable');
-  }
-  const payload = await builder(doc);
-  const eml = payload?.eml || '';
-  if (!eml) {
-    throw new Error('No email message generated');
-  }
-  triggerDownloadFromText(doc, 'TBTC_VIC_EAST_Proposal.eml', eml, 'message/rfc822');
 }
 
 function triggerDownloadFromText(doc, filename, text, mimeType = 'text/plain;charset=utf-8') {
@@ -885,6 +848,360 @@ function triggerDownloadFromText(doc, filename, text, mimeType = 'text/plain;cha
     }
   }
 }
+
+function ensureDocumentObject(doc) {
+  if (doc && typeof doc.getElementById === 'function') {
+    return doc;
+  }
+  if (typeof document !== 'undefined' && document && typeof document.getElementById === 'function') {
+    return document;
+  }
+  throw new Error('A document instance is required');
+}
+
+function getInputElement(doc, id) {
+  if (!doc || typeof doc.getElementById !== 'function') {
+    return null;
+  }
+  return doc.getElementById(id);
+}
+
+function getInputValue(doc, id, fallback = '') {
+  const el = getInputElement(doc, id);
+  if (el && typeof el.value === 'string') {
+    return el.value;
+  }
+  return fallback;
+}
+
+function getCheckboxValue(doc, id, fallback = false) {
+  const el = getInputElement(doc, id);
+  if (el && typeof el.checked === 'boolean') {
+    return Boolean(el.checked);
+  }
+  return Boolean(fallback);
+}
+
+function getSelectValue(doc, id, fallback = '') {
+  const el = getInputElement(doc, id);
+  if (el && typeof el.value === 'string') {
+    return el.value || fallback;
+  }
+  return fallback;
+}
+
+function setInputValue(doc, id, value) {
+  const el = getInputElement(doc, id);
+  if (el && 'value' in el) {
+    el.value = value == null ? '' : String(value);
+  }
+}
+
+function setCheckboxValue(doc, id, checked) {
+  const el = getInputElement(doc, id);
+  if (el && typeof el.checked === 'boolean') {
+    el.checked = Boolean(checked);
+  }
+}
+
+function setSelectValue(doc, id, value) {
+  const el = getInputElement(doc, id);
+  if (el && typeof el.value === 'string') {
+    el.value = value == null ? '' : String(value);
+  }
+}
+
+function readRadioValue(doc, name, fallback) {
+  if (!doc || typeof doc.querySelectorAll !== 'function') {
+    return fallback;
+  }
+  const inputs = Array.from(doc.querySelectorAll('input'));
+  let first = null;
+  for (const input of inputs) {
+    if (!input || typeof input.getAttribute !== 'function') {
+      continue;
+    }
+    if ((input.getAttribute('type') || '').toLowerCase() !== 'radio') {
+      continue;
+    }
+    if ((input.getAttribute('name') || '') !== name) {
+      continue;
+    }
+    if (first == null) {
+      first = input.value || '';
+    }
+    if (input.checked) {
+      return input.value || (first != null ? first : fallback);
+    }
+  }
+  if (first != null && first !== '') {
+    return first;
+  }
+  return fallback;
+}
+
+function setRadioValue(doc, name, value) {
+  if (!doc || typeof doc.querySelectorAll !== 'function') {
+    return value;
+  }
+  const inputs = Array.from(doc.querySelectorAll('input'));
+  let firstMatch = null;
+  let matched = false;
+  for (const input of inputs) {
+    if (!input || typeof input.getAttribute !== 'function') {
+      continue;
+    }
+    if ((input.getAttribute('type') || '').toLowerCase() !== 'radio') {
+      continue;
+    }
+    if ((input.getAttribute('name') || '') !== name) {
+      continue;
+    }
+    if (firstMatch == null) {
+      firstMatch = input;
+    }
+    const isMatch = input.value === value;
+    input.checked = isMatch;
+    if (isMatch) {
+      matched = true;
+    }
+  }
+  if (!matched && firstMatch) {
+    firstMatch.checked = true;
+    return firstMatch.value || value;
+  }
+  return matched ? value : (firstMatch ? firstMatch.value : value);
+}
+
+function toNumeric(value, fallback) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function getIconMap() {
+  if (typeof window !== 'undefined' && window && typeof window.__ICON_DATA__ === 'object' && window.__ICON_DATA__) {
+    return window.__ICON_DATA__;
+  }
+  return {};
+}
+
+function resolveIconImage(assetKey) {
+  if (!assetKey) {
+    return '';
+  }
+  const map = getIconMap();
+  if (map && typeof map[assetKey] === 'string' && map[assetKey]) {
+    return map[assetKey];
+  }
+  return '';
+}
+
+function sanitizePricingItems(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+  return items.map((item) => ({
+    label: typeof item?.label === 'string' ? item.label : '',
+    qty: toNumeric(item?.qty, 0),
+    unit: typeof item?.unit === 'string' ? item.unit : '',
+    price: toNumeric(item?.price, 0),
+  }));
+}
+
+function sanitizeFeatureSnapshot(feature) {
+  if (!feature || typeof feature !== 'object') {
+    return null;
+  }
+  const title = typeof feature.t === 'string' ? feature.t : (typeof feature.title === 'string' ? feature.title : '');
+  const copy = typeof feature.c === 'string' ? feature.c : (typeof feature.copy === 'string' ? feature.copy : '');
+  const hero = Boolean(feature.hero);
+  const rawSize = toNumeric(feature.size, hero ? 96 : 56);
+  const size = clampIconSizeValue(rawSize, hero);
+  const icon = typeof feature.icon === 'string' && feature.icon.trim() ? feature.icon.trim() : null;
+  const assetKey = typeof feature.assetKey === 'string' && feature.assetKey.trim() ? feature.assetKey.trim() : (icon || null);
+  const imgName = typeof feature.imgName === 'string' && feature.imgName.trim() ? feature.imgName.trim() : (assetKey || null);
+  const img = typeof feature.img === 'string' && feature.img.trim() ? feature.img.trim() : '';
+  const fallbackImg = assetKey ? resolveIconImage(assetKey) : '';
+  if (!title && !copy && !img && !fallbackImg) {
+    return null;
+  }
+  return {
+    t: title,
+    c: copy,
+    hero,
+    size,
+    icon: assetKey,
+    assetKey,
+    img: (img || fallbackImg || TRANSPARENT_PNG),
+    imgName: imgName || null,
+  };
+}
+
+function collectProposalSnapshot(docParam) {
+  const doc = ensureDocumentObject(docParam);
+  const bannerFit = readRadioValue(doc, 'fit', state.banner.fit || 'contain');
+  const snapshot = {
+    version: 1,
+    preset: getSelectValue(doc, 'preset', state.preset || 'navy'),
+    banner: {
+      text: getInputValue(doc, 'bannerTxt', state.banner.text || DEFAULT_BANNER_TEXT),
+      bold: getCheckboxValue(doc, 'bnBold', state.banner.bold),
+      textSize: toNumeric(getInputValue(doc, 'bnTextSize', state.banner.textSize), state.banner.textSize),
+      layout: getSelectValue(doc, 'bannerLayout', state.banner.layout),
+      size: getSelectValue(doc, 'bannerSize', state.banner.size),
+      fit: bannerFit,
+      scale: toNumeric(getInputValue(doc, 'bnScale', state.banner.scale), state.banner.scale),
+      offsetX: toNumeric(getInputValue(doc, 'bnX', state.banner.offsetX), state.banner.offsetX),
+      offsetY: toNumeric(getInputValue(doc, 'bnY', state.banner.offsetY), state.banner.offsetY),
+      logoMode: getSelectValue(doc, 'bannerLogoMode', state.banner.logoMode || 'auto'),
+      panelImage: typeof state.banner.panelImage === 'string' && state.banner.panelImage ? state.banner.panelImage : null,
+    },
+    docType: getSelectValue(doc, 'docType', state.docType || DEFAULT_DOC_TYPE),
+    pricing: {
+      gst: getSelectValue(doc, 'gstMode', state.pricing.gst || DEFAULT_GST_MODE),
+      monthly: toNumeric(getInputValue(doc, 'monthly', state.pricing.monthly), state.pricing.monthly || 0),
+      term: toNumeric(getInputValue(doc, 'term', state.pricing.term), state.pricing.term || 0),
+      items: Array.isArray(state.pricing.items)
+        ? state.pricing.items.map((item) => ({
+            label: typeof item.label === 'string' ? item.label : '',
+            qty: toNumeric(item.qty, 0),
+            unit: typeof item.unit === 'string' ? item.unit : '',
+            price: toNumeric(item.price, 0),
+          }))
+        : [],
+    },
+    customer: getInputValue(doc, 'customer', ''),
+    ref: getInputValue(doc, 'ref', ''),
+    hero: getInputValue(doc, 'hero', ''),
+    subHero: getInputValue(doc, 'subHero', ''),
+    summary: getInputValue(doc, 'summaryEdit', ''),
+    benefits: getInputValue(doc, 'benefitsEdit', ''),
+    assumptions: getInputValue(doc, 'assumptionsEdit', ''),
+    features: Array.isArray(state.features)
+      ? state.features.map((feature) => ({
+          t: typeof feature.t === 'string' ? feature.t : '',
+          c: typeof feature.c === 'string' ? feature.c : '',
+          hero: Boolean(feature.hero),
+          size: toNumeric(feature.size, feature.hero ? 96 : 56),
+          icon: typeof feature.icon === 'string' && feature.icon ? feature.icon : null,
+          assetKey: typeof feature.assetKey === 'string' && feature.assetKey ? feature.assetKey : (typeof feature.icon === 'string' && feature.icon ? feature.icon : null),
+          img: typeof feature.img === 'string' ? feature.img : '',
+          imgName: typeof feature.imgName === 'string' && feature.imgName ? feature.imgName : null,
+        }))
+      : [],
+  };
+  return snapshot;
+}
+
+function applyProposalSnapshot(snapshot, docParam) {
+  const doc = ensureDocumentObject(docParam);
+  if (!snapshot || typeof snapshot !== 'object') {
+    throw new Error('Invalid proposal snapshot');
+  }
+  const bannerData = snapshot.banner && typeof snapshot.banner === 'object' ? snapshot.banner : {};
+  const presetKey = typeof snapshot.preset === 'string' && PRESETS[snapshot.preset] ? snapshot.preset : 'navy';
+  state.preset = presetKey;
+  setSelectValue(doc, 'preset', presetKey);
+
+  const bannerText = typeof bannerData.text === 'string' ? bannerData.text : DEFAULT_BANNER_TEXT;
+  state.banner.text = bannerText;
+  setInputValue(doc, 'bannerTxt', bannerText);
+
+  const bannerBold = bannerData.bold != null ? Boolean(bannerData.bold) : Boolean(state.banner.bold);
+  state.banner.bold = bannerBold;
+  setCheckboxValue(doc, 'bnBold', bannerBold);
+
+  const bannerTextSize = toNumeric(bannerData.textSize, state.banner.textSize);
+  state.banner.textSize = bannerTextSize;
+  setInputValue(doc, 'bnTextSize', bannerTextSize);
+
+  const bannerLayout = typeof bannerData.layout === 'string' && bannerData.layout ? bannerData.layout : state.banner.layout;
+  state.banner.layout = bannerLayout;
+  setSelectValue(doc, 'bannerLayout', bannerLayout);
+
+  const bannerSize = typeof bannerData.size === 'string' && bannerData.size ? bannerData.size : state.banner.size;
+  state.banner.size = bannerSize;
+  setSelectValue(doc, 'bannerSize', bannerSize);
+
+  const bannerScale = toNumeric(bannerData.scale, state.banner.scale);
+  state.banner.scale = bannerScale;
+  setInputValue(doc, 'bnScale', bannerScale);
+
+  const bannerOffsetX = toNumeric(bannerData.offsetX, state.banner.offsetX);
+  state.banner.offsetX = bannerOffsetX;
+  setInputValue(doc, 'bnX', bannerOffsetX);
+
+  const bannerOffsetY = toNumeric(bannerData.offsetY, state.banner.offsetY);
+  state.banner.offsetY = bannerOffsetY;
+  setInputValue(doc, 'bnY', bannerOffsetY);
+
+  const bannerFit = typeof bannerData.fit === 'string' && bannerData.fit ? bannerData.fit : state.banner.fit;
+  state.banner.fit = setRadioValue(doc, 'fit', bannerFit) || bannerFit;
+
+  const bannerLogoMode = typeof bannerData.logoMode === 'string' && bannerData.logoMode ? bannerData.logoMode : state.banner.logoMode;
+  state.banner.logoMode = bannerLogoMode || 'auto';
+  setSelectValue(doc, 'bannerLogoMode', state.banner.logoMode);
+
+  const bannerPanelImage = typeof bannerData.panelImage === 'string' && bannerData.panelImage ? bannerData.panelImage : null;
+  state.banner.panelImage = bannerPanelImage;
+
+  const docTypeValue = typeof snapshot.docType === 'string' ? snapshot.docType : state.docType;
+  state.docType = docTypeValue === 'one' || docTypeValue === 'two' ? docTypeValue : DEFAULT_DOC_TYPE;
+  setSelectValue(doc, 'docType', state.docType);
+
+  const pricingData = snapshot.pricing && typeof snapshot.pricing === 'object' ? snapshot.pricing : {};
+  const gstMode = pricingData.gst === 'inc' ? 'inc' : 'ex';
+  state.pricing.gst = gstMode;
+  setSelectValue(doc, 'gstMode', gstMode);
+
+  state.pricing.monthly = toNumeric(pricingData.monthly, 0);
+  setInputValue(doc, 'monthly', state.pricing.monthly);
+
+  state.pricing.term = toNumeric(pricingData.term, 0);
+  setInputValue(doc, 'term', state.pricing.term);
+
+  const sanitizedItems = sanitizePricingItems(pricingData.items).slice(0, 64);
+  state.pricing.items.length = 0;
+  sanitizedItems.forEach((item) => {
+    state.pricing.items.push({
+      label: item.label,
+      qty: item.qty,
+      unit: item.unit,
+      price: item.price,
+    });
+  });
+
+  setInputValue(doc, 'customer', typeof snapshot.customer === 'string' ? snapshot.customer : '');
+  setInputValue(doc, 'ref', typeof snapshot.ref === 'string' ? snapshot.ref : '');
+  setInputValue(doc, 'hero', typeof snapshot.hero === 'string' ? snapshot.hero : '');
+  setInputValue(doc, 'subHero', typeof snapshot.subHero === 'string' ? snapshot.subHero : '');
+  setInputValue(doc, 'summaryEdit', typeof snapshot.summary === 'string' ? snapshot.summary : '');
+  setInputValue(doc, 'benefitsEdit', typeof snapshot.benefits === 'string' ? snapshot.benefits : '');
+  setInputValue(doc, 'assumptionsEdit', typeof snapshot.assumptions === 'string' ? snapshot.assumptions : '');
+
+  const featuresSnapshot = Array.isArray(snapshot.features) ? snapshot.features : [];
+  const sanitizedFeatures = featuresSnapshot.slice(0, MAX_FEATURES)
+    .map(sanitizeFeatureSnapshot)
+    .filter(Boolean);
+  state.features.length = 0;
+  sanitizedFeatures.forEach((feature) => {
+    state.features.push({
+      t: feature.t,
+      c: feature.c,
+      hero: feature.hero,
+      size: feature.size,
+      icon: feature.icon,
+      assetKey: feature.assetKey,
+      img: feature.img,
+      imgName: feature.imgName,
+    });
+  });
+  if (typeof window !== 'undefined') {
+    window._features = state.features;
+  }
+
+  return collectProposalSnapshot(doc);
+}
 function initializeApp() {
   if (typeof document === 'undefined') {
     return;
@@ -892,7 +1209,9 @@ function initializeApp() {
 
   const doc = document;
   const exportEmailBtn = doc.getElementById('btnExportEmail');
-  const exportEmailEmlBtn = doc.getElementById('btnExportEmailEml');
+  const saveProposalBtn = doc.getElementById('btnSaveProposal');
+  const loadProposalBtn = doc.getElementById('btnLoadProposal');
+  const proposalUploadInput = doc.getElementById('proposalUpload');
   const logoMap = (typeof window !== 'undefined' && window.__LOGO_DATA__ && typeof window.__LOGO_DATA__ === 'object')
     ? window.__LOGO_DATA__
     : {};
@@ -1662,6 +1981,12 @@ function initializeApp() {
       scheduleBannerSync();
     }
   };
+
+  if (typeof state.banner.panelImage === 'string' && state.banner.panelImage) {
+    bannerPanelImage = new Image();
+    bannerPanelImage.onload = drawBanner;
+    bannerPanelImage.src = state.banner.panelImage;
+  }
 
   const keyFeaturesSection = doc.getElementById('keyFeaturesSection');
   const keyFeaturesList = doc.getElementById('keyFeaturesList');
@@ -2465,9 +2790,16 @@ function initializeApp() {
       }
       const reader = new FileReader();
       reader.onload = () => {
-        bannerPanelImage = new Image();
-        bannerPanelImage.onload = drawBanner;
-        bannerPanelImage.src = reader.result || "";
+        const result = typeof reader.result === 'string' ? reader.result : '';
+        state.banner.panelImage = result || null;
+        if (result) {
+          bannerPanelImage = new Image();
+          bannerPanelImage.onload = drawBanner;
+          bannerPanelImage.src = result;
+        } else {
+          bannerPanelImage = null;
+          drawBanner();
+        }
       };
       reader.readAsDataURL(file);
     });
@@ -2503,15 +2835,75 @@ function initializeApp() {
     });
   }
 
-  if (exportEmailEmlBtn && typeof exportEmailEmlBtn.addEventListener === 'function') {
-    exportEmailEmlBtn.addEventListener('click', async () => {
+  if (saveProposalBtn && typeof saveProposalBtn.addEventListener === 'function') {
+    saveProposalBtn.addEventListener('click', () => {
       try {
-        await exportEmailEML();
+        const snapshot = collectProposalSnapshot(doc);
+        const json = JSON.stringify(snapshot, null, 2);
+        triggerDownloadFromText(doc, 'TBTC_VIC_EAST_Proposal.json', json, 'application/json');
       } catch (error) {
         if (typeof console !== 'undefined' && console && typeof console.error === 'function') {
-          console.error('Unable to export email EML', error);
+          console.error('Unable to save proposal JSON', error);
         }
       }
+    });
+  }
+
+  if (loadProposalBtn && typeof loadProposalBtn.addEventListener === 'function' && proposalUploadInput) {
+    loadProposalBtn.addEventListener('click', () => {
+      proposalUploadInput.click();
+    });
+  }
+
+  if (proposalUploadInput && typeof proposalUploadInput.addEventListener === 'function') {
+    proposalUploadInput.addEventListener('change', (event) => {
+      const file = event.target.files && event.target.files[0];
+      if (!file) {
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const text = typeof reader.result === 'string' ? reader.result : '';
+        proposalUploadInput.value = '';
+        if (!text.trim()) {
+          if (typeof console !== 'undefined' && console && typeof console.error === 'function') {
+            console.error('Unable to load proposal JSON: file was empty');
+          }
+          return;
+        }
+        try {
+          const snapshot = JSON.parse(text);
+          applyProposalSnapshot(snapshot, doc);
+          state.banner.logoMode = populateBannerLogos(state.banner.logoMode);
+          if (typeof state.banner.panelImage === 'string' && state.banner.panelImage) {
+            bannerPanelImage = new Image();
+            bannerPanelImage.onload = drawBanner;
+            bannerPanelImage.src = state.banner.panelImage;
+          } else {
+            bannerPanelImage = null;
+          }
+          renderFeatureGrid();
+          renderFeaturePreview();
+          renderItems();
+          renderPriceTables();
+          renderBenefits();
+          renderAssumptions();
+          syncTotals();
+          syncPreview();
+          drawBanner();
+        } catch (error) {
+          if (typeof console !== 'undefined' && console && typeof console.error === 'function') {
+            console.error('Unable to load proposal JSON', error);
+          }
+        }
+      };
+      reader.onerror = () => {
+        proposalUploadInput.value = '';
+        if (typeof console !== 'undefined' && console && typeof console.error === 'function') {
+          console.error('Unable to read proposal JSON', reader.error);
+        }
+      };
+      reader.readAsText(file);
     });
   }
 
@@ -2574,7 +2966,8 @@ if (typeof module !== 'undefined' && module.exports) {
     __rgbToHex__px,
     buildEmailHTML,
     exportEmailHTML,
-    exportEmailEML,
+    collectProposalSnapshot,
+    applyProposalSnapshot,
     initializeApp,
     state,
     PRESETS,
@@ -2591,12 +2984,6 @@ if (typeof module !== 'undefined' && module.exports) {
     },
     __resetEmailBuilder__() {
       emailBuilderOverride = null;
-    },
-    __setEmailEmlBuilder__(fn) {
-      emailEmlBuilderOverride = typeof fn === 'function' ? fn : null;
-    },
-    __resetEmailEmlBuilder__() {
-      emailEmlBuilderOverride = null;
     },
   };
 }
