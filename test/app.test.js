@@ -8,12 +8,11 @@ const {
   bulletify,
   buildEmailHTML,
   exportEmailHTML,
-  exportEmailEML,
+  collectProposalSnapshot,
+  applyProposalSnapshot,
   state,
   __setEmailBuilder__,
   __resetEmailBuilder__,
-  __setEmailEmlBuilder__,
-  __resetEmailEmlBuilder__,
 } = require('../js/app.js');
 
 const cloneState = () => JSON.parse(JSON.stringify(state));
@@ -1426,46 +1425,254 @@ test('exportEmailHTML triggers download of generated markup', async () => {
   }
 });
 
-test('exportEmailEML triggers download of generated message', async () => {
-  const snapshot = cloneState();
+test('collectProposalSnapshot captures current proposal data', () => {
+  const originalState = cloneState();
   const doc = new MockDocument();
-  const originalDocument = global.document;
-  const originalURL = global.URL;
-  const urlCalls = [];
-
-  global.document = doc;
-  global.URL = {
-    createObjectURL(blob) {
-      urlCalls.push(blob);
-      return `blob:mock-${urlCalls.length}`;
-    },
-    revokeObjectURL() {},
+  const append = (element) => {
+    doc.body.appendChild(element);
+    return element;
   };
 
+  const makeInput = (id, value, type = 'text') => {
+    const input = doc.createElement('input');
+    input.setAttribute('id', id);
+    if (type) {
+      input.setAttribute('type', type);
+    }
+    if (type === 'checkbox') {
+      input.checked = Boolean(value);
+    } else {
+      input.value = value;
+    }
+    return append(input);
+  };
+
+  const makeSelect = (id, value) => {
+    const select = doc.createElement('select');
+    select.setAttribute('id', id);
+    select.value = value;
+    return append(select);
+  };
+
+  makeSelect('preset', 'sky');
+  makeInput('bannerTxt', 'Banner line');
+  makeInput('bnBold', true, 'checkbox');
+  makeInput('bnTextSize', '1.1');
+  makeSelect('bannerLayout', 'right');
+  makeSelect('bannerSize', '900x260');
+  makeInput('bnScale', '1.3');
+  makeInput('bnX', '6');
+  makeInput('bnY', '-4');
+  makeSelect('bannerLogoMode', 'Primary (Mono White)');
+  makeSelect('docType', 'two');
+  makeSelect('gstMode', 'inc');
+  makeInput('monthly', '845.25');
+  makeInput('term', '30');
+  makeInput('customer', 'Example Org');
+  makeInput('ref', 'REF-2042');
+  makeInput('hero', 'Hero title');
+  makeInput('subHero', 'Sub headline');
+  makeInput('summaryEdit', 'Summary content');
+  makeInput('benefitsEdit', 'Benefit A\nBenefit B');
+  makeInput('assumptionsEdit', 'Assumption One');
+
+  const fitContain = doc.createElement('input');
+  fitContain.setAttribute('id', 'fitContain');
+  fitContain.setAttribute('type', 'radio');
+  fitContain.setAttribute('name', 'fit');
+  fitContain.value = 'contain';
+  append(fitContain);
+
+  const fitCover = doc.createElement('input');
+  fitCover.setAttribute('id', 'fitCover');
+  fitCover.setAttribute('type', 'radio');
+  fitCover.setAttribute('name', 'fit');
+  fitCover.value = 'cover';
+  fitCover.checked = true;
+  append(fitCover);
+
+  state.banner.panelImage = 'data:image/png;base64,panel';
+  state.features.length = 0;
+  state.features.push({
+    t: 'Feature A',
+    c: 'Copy A',
+    hero: false,
+    size: 80,
+    icon: 'iconA',
+    assetKey: 'iconA',
+    img: 'data:image/png;base64,feature',
+    imgName: 'iconA.png',
+  });
+  state.pricing.items.length = 0;
+  state.pricing.items.push({ label: 'Line Item', qty: 2, unit: 'seat', price: 150 });
+  state.pricing.gst = 'inc';
+  state.pricing.monthly = 845.25;
+  state.pricing.term = 30;
+
+  const snapshot = collectProposalSnapshot(doc);
+
+  assert.strictEqual(snapshot.version, 1);
+  assert.strictEqual(snapshot.preset, 'sky');
+  assert.strictEqual(snapshot.banner.text, 'Banner line');
+  assert.strictEqual(snapshot.banner.bold, true);
+  assert.strictEqual(snapshot.banner.fit, 'cover');
+  assert.strictEqual(snapshot.banner.panelImage, 'data:image/png;base64,panel');
+  assert.strictEqual(snapshot.customer, 'Example Org');
+  assert.strictEqual(snapshot.ref, 'REF-2042');
+  assert.strictEqual(snapshot.pricing.monthly, 845.25);
+  assert.deepStrictEqual(snapshot.pricing.items, [{ label: 'Line Item', qty: 2, unit: 'seat', price: 150 }]);
+  assert.strictEqual(snapshot.features.length, 1);
+  assert.strictEqual(snapshot.features[0].img, 'data:image/png;base64,feature');
+
+  restoreState(originalState);
+});
+
+test('applyProposalSnapshot hydrates state and inputs from data', () => {
+  const originalState = cloneState();
+  const doc = new MockDocument();
+  const append = (element) => {
+    doc.body.appendChild(element);
+    return element;
+  };
+
+  const makeInput = (id, type = 'text') => {
+    const input = doc.createElement('input');
+    input.setAttribute('id', id);
+    if (type) {
+      input.setAttribute('type', type);
+    }
+    if (type === 'checkbox') {
+      input.checked = false;
+    } else {
+      input.value = '';
+    }
+    return append(input);
+  };
+
+  const makeSelect = (id) => {
+    const select = doc.createElement('select');
+    select.setAttribute('id', id);
+    select.value = '';
+    return append(select);
+  };
+
+  makeSelect('preset');
+  makeInput('bannerTxt');
+  makeInput('bnBold', 'checkbox');
+  makeInput('bnTextSize');
+  makeSelect('bannerLayout');
+  makeSelect('bannerSize');
+  makeInput('bnScale');
+  makeInput('bnX');
+  makeInput('bnY');
+  makeSelect('bannerLogoMode');
+  makeSelect('docType');
+  makeSelect('gstMode');
+  makeInput('monthly');
+  makeInput('term');
+  makeInput('customer');
+  makeInput('ref');
+  makeInput('hero');
+  makeInput('subHero');
+  makeInput('summaryEdit');
+  makeInput('benefitsEdit');
+  makeInput('assumptionsEdit');
+
+  const fitContainApply = doc.createElement('input');
+  fitContainApply.setAttribute('type', 'radio');
+  fitContainApply.setAttribute('name', 'fit');
+  fitContainApply.value = 'contain';
+  fitContainApply.checked = true;
+  append(fitContainApply);
+
+  const fitCoverApply = doc.createElement('input');
+  fitCoverApply.setAttribute('type', 'radio');
+  fitCoverApply.setAttribute('name', 'fit');
+  fitCoverApply.value = 'cover';
+  append(fitCoverApply);
+
+  const originalWindow = global.window;
+  global.window = { __ICON_DATA__: { iconB: 'data:image/png;base64,iconB' } };
+
   try {
-    __setEmailEmlBuilder__(async () => ({ eml: 'From: Example <example@test>\r\n', html: '<html></html>' }));
-    await exportEmailEML();
-    assert.strictEqual(doc.downloads.length, 1);
-    const [download] = doc.downloads;
-    assert.strictEqual(download.download, 'TBTC_VIC_EAST_Proposal.eml');
-    assert.strictEqual(download.href, 'blob:mock-1');
-    assert.strictEqual(urlCalls.length, 1);
-    assert.strictEqual(urlCalls[0].type, 'message/rfc822');
-    const text = await urlCalls[0].text();
-    assert.strictEqual(text, 'From: Example <example@test>\r\n');
-    assert.strictEqual(doc.body.children.length, 0);
+    const snapshot = {
+      version: 1,
+      preset: 'coral',
+      banner: {
+        text: 'Updated Banner',
+        bold: false,
+        textSize: 1.25,
+        layout: 'right',
+        size: '880x240',
+        fit: 'cover',
+        scale: 1.4,
+        offsetX: 8,
+        offsetY: -6,
+        logoMode: 'Primary (Mono White)',
+        panelImage: 'data:image/png;base64,panelB',
+      },
+      docType: 'one',
+      pricing: {
+        gst: 'inc',
+        monthly: 432.1,
+        term: 18,
+        items: [{ label: 'Updated Item', qty: 1, unit: 'bundle', price: 299 }],
+      },
+      customer: 'New Org',
+      ref: 'REF-9',
+      hero: 'Hero copy',
+      subHero: 'Sub copy',
+      summary: 'New summary',
+      benefits: 'One\nTwo',
+      assumptions: 'Updated assumption',
+      features: [
+        {
+          t: 'Updated Feature',
+          c: 'Feature details',
+          hero: true,
+          size: 90,
+          icon: 'iconB',
+          img: 'data:image/png;base64,featureB',
+          imgName: 'iconB.png',
+        },
+      ],
+    };
+
+    applyProposalSnapshot(snapshot, doc);
+
+    assert.strictEqual(doc.getElementById('preset').value, 'coral');
+    assert.strictEqual(state.preset, 'coral');
+    assert.strictEqual(state.banner.text, 'Updated Banner');
+    assert.strictEqual(state.banner.bold, false);
+    assert.strictEqual(state.banner.fit, 'cover');
+    assert.strictEqual(state.banner.panelImage, 'data:image/png;base64,panelB');
+    assert.strictEqual(doc.getElementById('bnBold').checked, false);
+    assert.strictEqual(doc.getElementById('bnTextSize').value, '1.25');
+    assert.strictEqual(doc.getElementById('docType').value, 'one');
+    assert.strictEqual(state.pricing.gst, 'inc');
+    assert.strictEqual(doc.getElementById('monthly').value, '432.1');
+    assert.strictEqual(state.pricing.items.length, 1);
+    assert.strictEqual(state.pricing.items[0].label, 'Updated Item');
+    assert.strictEqual(doc.getElementById('customer').value, 'New Org');
+    assert.strictEqual(doc.getElementById('benefitsEdit').value, 'One\nTwo');
+
+    const fitRadios = Array.from(doc.querySelectorAll('input')).filter((input) => {
+      return typeof input.getAttribute === 'function' && input.getAttribute('name') === 'fit';
+    });
+    const selected = fitRadios.find((radio) => radio.checked);
+    assert.ok(selected);
+    assert.strictEqual(selected.value, 'cover');
+
+    assert.strictEqual(state.features.length, 1);
+    assert.strictEqual(state.features[0].hero, true);
+    assert.strictEqual(state.features[0].img, 'data:image/png;base64,featureB');
+    assert.strictEqual(global.window._features, state.features);
   } finally {
-    __resetEmailEmlBuilder__();
-    if (originalDocument === undefined) {
-      delete global.document;
+    restoreState(originalState);
+    if (originalWindow === undefined) {
+      delete global.window;
     } else {
-      global.document = originalDocument;
+      global.window = originalWindow;
     }
-    if (originalURL === undefined) {
-      delete global.URL;
-    } else {
-      global.URL = originalURL;
-    }
-    restoreState(snapshot);
   }
 });
