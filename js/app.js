@@ -1685,21 +1685,23 @@ function initializeApp() {
     }
   };
 
-  const clipRoundedRect = (ctx, x, y, w, h, radii) => {
-    const normalized = (() => {
-      if (typeof radii === "number") {
-        return { tl: radii, tr: radii, br: radii, bl: radii };
-      }
-      if (radii && typeof radii === "object") {
-        return {
-          tl: Math.max(0, radii.tl || 0),
-          tr: Math.max(0, radii.tr || 0),
-          br: Math.max(0, radii.br || 0),
-          bl: Math.max(0, radii.bl || 0),
-        };
-      }
-      return { tl: 0, tr: 0, br: 0, bl: 0 };
-    })();
+  const normalizeCornerRadii = (radii) => {
+    if (typeof radii === "number") {
+      return { tl: radii, tr: radii, br: radii, bl: radii };
+    }
+    if (radii && typeof radii === "object") {
+      return {
+        tl: Math.max(0, radii.tl || 0),
+        tr: Math.max(0, radii.tr || 0),
+        br: Math.max(0, radii.br || 0),
+        bl: Math.max(0, radii.bl || 0),
+      };
+    }
+    return { tl: 0, tr: 0, br: 0, bl: 0 };
+  };
+
+  const beginRoundedRectPath = (ctx, x, y, w, h, radii) => {
+    const normalized = normalizeCornerRadii(radii);
 
     const tl = Math.min(normalized.tl, Math.min(w, h) / 2);
     const tr = Math.min(normalized.tr, Math.min(w, h) / 2);
@@ -1733,7 +1735,16 @@ function initializeApp() {
       ctx.lineTo(x, y);
     }
     ctx.closePath();
+  };
+
+  const clipRoundedRect = (ctx, x, y, w, h, radii) => {
+    beginRoundedRectPath(ctx, x, y, w, h, radii);
     ctx.clip();
+  };
+
+  const fillRoundedRect = (ctx, x, y, w, h, radii) => {
+    beginRoundedRectPath(ctx, x, y, w, h, radii);
+    ctx.fill();
   };
 
   const safeImageSourceCache = new Map();
@@ -1841,7 +1852,11 @@ function initializeApp() {
     if (!isHeadlineOnly) {
       bannerCtx.save();
       bannerCtx.fillStyle = preset.panel;
-      bannerCtx.fillRect(panelX, 0, panelWidth, height);
+      const innerCornerRadius = Math.round(height * 0.18);
+      const panelCornerRadii = state.banner.layout === "left"
+        ? { br: innerCornerRadius }
+        : { bl: innerCornerRadius };
+      fillRoundedRect(bannerCtx, panelX, 0, panelWidth, height, panelCornerRadii);
       if (bannerPanelImage && bannerPanelImage.complete && bannerPanelImage.naturalWidth > 0) {
         const baseScaleX = panelWidth / bannerPanelImage.naturalWidth;
         const baseScaleY = height / bannerPanelImage.naturalHeight;
@@ -1856,11 +1871,7 @@ function initializeApp() {
           drawY += (Number(state.banner.offsetY || 0) / 100) * (height / 2);
         }
         bannerCtx.save();
-        const imageCornerRadius = Math.round(height * 0.18);
-        const clipRadii = state.banner.layout === "left"
-          ? { br: imageCornerRadius }
-          : { bl: imageCornerRadius };
-        clipRoundedRect(bannerCtx, panelX, 0, panelWidth, height, clipRadii);
+        clipRoundedRect(bannerCtx, panelX, 0, panelWidth, height, panelCornerRadii);
         bannerCtx.drawImage(bannerPanelImage, drawX, drawY, renderWidth, renderHeight);
         bannerCtx.restore();
       }
