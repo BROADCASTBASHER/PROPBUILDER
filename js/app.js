@@ -1685,19 +1685,67 @@ function initializeApp() {
     }
   };
 
-  const clipRoundedRect = (ctx, x, y, w, h, r) => {
+  const normalizeCornerRadii = (radii, w, h) => {
+    const maxRadius = Math.min(w, h) / 2;
+    if (typeof radii === "number") {
+      const clamped = Math.min(Math.max(radii, 0), maxRadius);
+      return { tl: clamped, tr: clamped, br: clamped, bl: clamped };
+    }
+    const normalized = { tl: 0, tr: 0, br: 0, bl: 0 };
+    if (radii && typeof radii === "object") {
+      normalized.tl = Math.min(Math.max(radii.tl || 0, 0), maxRadius);
+      normalized.tr = Math.min(Math.max(radii.tr || 0, 0), maxRadius);
+      normalized.br = Math.min(Math.max(radii.br || 0, 0), maxRadius);
+      normalized.bl = Math.min(Math.max(radii.bl || 0, 0), maxRadius);
+    }
+    return normalized;
+  };
+
+  const buildRoundedRectPath = (ctx, x, y, w, h, radii) => {
+    const { tl, tr, br, bl } = normalizeCornerRadii(radii, w, h);
+
     ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.lineTo(x + w - r, y);
-    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-    ctx.lineTo(x + w, y + h - r);
-    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-    ctx.lineTo(x + r, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-    ctx.lineTo(x, y + r);
-    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.moveTo(x + tl, y);
+    ctx.lineTo(x + w - tr, y);
+    if (tr > 0) {
+      ctx.quadraticCurveTo(x + w, y, x + w, y + tr);
+    } else {
+      ctx.lineTo(x + w, y);
+    }
+    ctx.lineTo(x + w, y + h - br);
+    if (br > 0) {
+      ctx.quadraticCurveTo(x + w, y + h, x + w - br, y + h);
+    } else {
+      ctx.lineTo(x + w, y + h);
+    }
+    ctx.lineTo(x + bl, y + h);
+    if (bl > 0) {
+      ctx.quadraticCurveTo(x, y + h, x, y + h - bl);
+    } else {
+      ctx.lineTo(x, y + h);
+    }
+    ctx.lineTo(x, y + tl);
+    if (tl > 0) {
+      ctx.quadraticCurveTo(x, y, x + tl, y);
+    } else {
+      ctx.lineTo(x, y);
+    }
     ctx.closePath();
+  };
+
+  const clipRoundedRect = (ctx, x, y, w, h, radii) => {
+    buildRoundedRectPath(ctx, x, y, w, h, radii);
     ctx.clip();
+  };
+
+  const fillRoundedRect = (ctx, x, y, w, h, radii, fillStyle) => {
+    ctx.save();
+    buildRoundedRectPath(ctx, x, y, w, h, radii);
+    if (fillStyle !== undefined) {
+      ctx.fillStyle = fillStyle;
+    }
+    ctx.fill();
+    ctx.restore();
   };
 
   const safeImageSourceCache = new Map();
@@ -1804,8 +1852,11 @@ function initializeApp() {
 
     if (!isHeadlineOnly) {
       bannerCtx.save();
-      bannerCtx.fillStyle = preset.panel;
-      bannerCtx.fillRect(panelX, 0, panelWidth, height);
+      const panelCornerRadius = Math.round(height * 0.18);
+      const panelRadii = state.banner.layout === "left"
+        ? { br: panelCornerRadius }
+        : { bl: panelCornerRadius };
+      fillRoundedRect(bannerCtx, panelX, 0, panelWidth, height, panelRadii, preset.panel);
       if (bannerPanelImage && bannerPanelImage.complete && bannerPanelImage.naturalWidth > 0) {
         const baseScaleX = panelWidth / bannerPanelImage.naturalWidth;
         const baseScaleY = height / bannerPanelImage.naturalHeight;
@@ -1820,7 +1871,7 @@ function initializeApp() {
           drawY += (Number(state.banner.offsetY || 0) / 100) * (height / 2);
         }
         bannerCtx.save();
-        clipRoundedRect(bannerCtx, panelX, 0, panelWidth, height, Math.round(height * 0.18));
+        clipRoundedRect(bannerCtx, panelX, 0, panelWidth, height, panelRadii);
         bannerCtx.drawImage(bannerPanelImage, drawX, drawY, renderWidth, renderHeight);
         bannerCtx.restore();
       }
