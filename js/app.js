@@ -1685,6 +1685,7 @@ function initializeApp() {
     }
   };
 
+ codex/add-lower-corner-rounding-to-banner-images-x76337
   const normalizeCornerRadii = (radii, w, h) => {
     const maxRadius = Math.min(w, h) / 2;
     if (typeof radii === "number") {
@@ -1703,6 +1704,28 @@ function initializeApp() {
 
   const buildRoundedRectPath = (ctx, x, y, w, h, radii) => {
     const { tl, tr, br, bl } = normalizeCornerRadii(radii, w, h);
+
+  const clipRoundedRect = (ctx, x, y, w, h, radii) => {
+    const normalized = (() => {
+      if (typeof radii === "number") {
+        return { tl: radii, tr: radii, br: radii, bl: radii };
+      }
+      if (radii && typeof radii === "object") {
+        return {
+          tl: Math.max(0, radii.tl || 0),
+          tr: Math.max(0, radii.tr || 0),
+          br: Math.max(0, radii.br || 0),
+          bl: Math.max(0, radii.bl || 0),
+        };
+      }
+      return { tl: 0, tr: 0, br: 0, bl: 0 };
+    })();
+
+    const tl = Math.min(normalized.tl, Math.min(w, h) / 2);
+    const tr = Math.min(normalized.tr, Math.min(w, h) / 2);
+    const br = Math.min(normalized.br, Math.min(w, h) / 2);
+    const bl = Math.min(normalized.bl, Math.min(w, h) / 2);
+ main
 
     ctx.beginPath();
     ctx.moveTo(x + tl, y);
@@ -1871,7 +1894,15 @@ function initializeApp() {
           drawY += (Number(state.banner.offsetY || 0) / 100) * (height / 2);
         }
         bannerCtx.save();
+ codex/add-lower-corner-rounding-to-banner-images-x76337
         clipRoundedRect(bannerCtx, panelX, 0, panelWidth, height, panelRadii);
+
+        const imageCornerRadius = Math.round(height * 0.18);
+        const clipRadii = state.banner.layout === "left"
+          ? { br: imageCornerRadius }
+          : { bl: imageCornerRadius };
+        clipRoundedRect(bannerCtx, panelX, 0, panelWidth, height, clipRadii);
+ main
         bannerCtx.drawImage(bannerPanelImage, drawX, drawY, renderWidth, renderHeight);
         bannerCtx.restore();
       }
