@@ -1685,6 +1685,26 @@ function initializeApp() {
     }
   };
 
+ codex/add-lower-corner-rounding-to-banner-images-x76337
+  const normalizeCornerRadii = (radii, w, h) => {
+    const maxRadius = Math.min(w, h) / 2;
+    if (typeof radii === "number") {
+      const clamped = Math.min(Math.max(radii, 0), maxRadius);
+      return { tl: clamped, tr: clamped, br: clamped, bl: clamped };
+    }
+    const normalized = { tl: 0, tr: 0, br: 0, bl: 0 };
+    if (radii && typeof radii === "object") {
+      normalized.tl = Math.min(Math.max(radii.tl || 0, 0), maxRadius);
+      normalized.tr = Math.min(Math.max(radii.tr || 0, 0), maxRadius);
+      normalized.br = Math.min(Math.max(radii.br || 0, 0), maxRadius);
+      normalized.bl = Math.min(Math.max(radii.bl || 0, 0), maxRadius);
+    }
+    return normalized;
+  };
+
+  const buildRoundedRectPath = (ctx, x, y, w, h, radii) => {
+    const { tl, tr, br, bl } = normalizeCornerRadii(radii, w, h);
+
   const clipRoundedRect = (ctx, x, y, w, h, radii) => {
     const normalized = (() => {
       if (typeof radii === "number") {
@@ -1705,6 +1725,7 @@ function initializeApp() {
     const tr = Math.min(normalized.tr, Math.min(w, h) / 2);
     const br = Math.min(normalized.br, Math.min(w, h) / 2);
     const bl = Math.min(normalized.bl, Math.min(w, h) / 2);
+ main
 
     ctx.beginPath();
     ctx.moveTo(x + tl, y);
@@ -1733,7 +1754,21 @@ function initializeApp() {
       ctx.lineTo(x, y);
     }
     ctx.closePath();
+  };
+
+  const clipRoundedRect = (ctx, x, y, w, h, radii) => {
+    buildRoundedRectPath(ctx, x, y, w, h, radii);
     ctx.clip();
+  };
+
+  const fillRoundedRect = (ctx, x, y, w, h, radii, fillStyle) => {
+    ctx.save();
+    buildRoundedRectPath(ctx, x, y, w, h, radii);
+    if (fillStyle !== undefined) {
+      ctx.fillStyle = fillStyle;
+    }
+    ctx.fill();
+    ctx.restore();
   };
 
   const safeImageSourceCache = new Map();
@@ -1840,8 +1875,11 @@ function initializeApp() {
 
     if (!isHeadlineOnly) {
       bannerCtx.save();
-      bannerCtx.fillStyle = preset.panel;
-      bannerCtx.fillRect(panelX, 0, panelWidth, height);
+      const panelCornerRadius = Math.round(height * 0.18);
+      const panelRadii = state.banner.layout === "left"
+        ? { br: panelCornerRadius }
+        : { bl: panelCornerRadius };
+      fillRoundedRect(bannerCtx, panelX, 0, panelWidth, height, panelRadii, preset.panel);
       if (bannerPanelImage && bannerPanelImage.complete && bannerPanelImage.naturalWidth > 0) {
         const baseScaleX = panelWidth / bannerPanelImage.naturalWidth;
         const baseScaleY = height / bannerPanelImage.naturalHeight;
@@ -1856,11 +1894,15 @@ function initializeApp() {
           drawY += (Number(state.banner.offsetY || 0) / 100) * (height / 2);
         }
         bannerCtx.save();
+ codex/add-lower-corner-rounding-to-banner-images-x76337
+        clipRoundedRect(bannerCtx, panelX, 0, panelWidth, height, panelRadii);
+
         const imageCornerRadius = Math.round(height * 0.18);
         const clipRadii = state.banner.layout === "left"
           ? { br: imageCornerRadius }
           : { bl: imageCornerRadius };
         clipRoundedRect(bannerCtx, panelX, 0, panelWidth, height, clipRadii);
+ main
         bannerCtx.drawImage(bannerPanelImage, drawX, drawY, renderWidth, renderHeight);
         bannerCtx.restore();
       }
